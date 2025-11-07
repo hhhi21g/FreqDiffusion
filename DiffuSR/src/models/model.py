@@ -40,8 +40,8 @@ class Att_Diffuse_model(nn.Module):
         self.loss_ce_rec = nn.CrossEntropyLoss(reduction='none')
         self.loss_mse = nn.MSELoss()
 
-    def diffu_pre(self, item_rep, tag_emb, mask_seq,train_flag=True):
-        seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq,train_flag=train_flag)
+    def diffu_pre(self, item_rep, tag_emb, mask_seq):
+        seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
         return seq_rep_diffu, item_rep_out, weights, t
 
     def reverse(self, item_rep, noise_x_t, mask_seq):
@@ -132,10 +132,11 @@ class Att_Diffuse_model(nn.Module):
             item_rep_dis = None
             seq_rep_dis = None
         else:
-            with torch.no_grad():
-                rep_diffu = self.diffu.reverse_cfg(
-                    item_embeddings, mask_seq, train_flag=False  # 可调参数
-                )
+            # noise_x_t = th.randn_like(tag_emb)
+            noise_x_t = th.randn_like(item_embeddings[:, -1, :])
+            rep_diffu = self.reverse(item_embeddings, noise_x_t, mask_seq)
+            if rep_diffu.dim() == 3:
+                rep_diffu = rep_diffu.mean(dim=1)
             weights, t, item_rep_dis, seq_rep_dis = None, None, None, None
 
         # item_rep = self.model_main(item_embeddings, rep_diffu, mask_seq)

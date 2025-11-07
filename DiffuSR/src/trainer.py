@@ -140,27 +140,27 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
         print("loss in epoch {}: {}".format(epoch_temp, loss_all.item()))
         lr_scheduler.step()
 
-        # if isinstance(model_joint, torch.nn.DataParallel):
-        #     logs = model_joint.module.diffu.freq_noise_fn.param_log
-        # else:
-        #     logs = model_joint.diffu.freq_noise_fn.param_log
-        #
-        # if len(logs) > 0:
-        #     start_mean = sum([x["start"] for x in logs]) / len(logs)
-        #     end_mean = sum([x["end"] for x in logs]) / len(logs)
-        #     tau_mean = sum([x["tau"] for x in logs]) / len(logs)
-        #
-        #     with open("lambda_track.txt", "a") as f:
-        #         f.write(
-        #             f"Epoch {epoch_temp + 1}: "
-        #             f"start={start_mean:.4f}, end={end_mean:.4f}, tau={tau_mean:.4f}\n"
-        #         )
-        #
-        #     # 记得清空记录，防止重复累计
-        #     if isinstance(model_joint, torch.nn.DataParallel):
-        #         model_joint.module.diffu.freq_noise_fn.param_log = []
-        #     else:
-        #         model_joint.diffu.freq_noise_fn.param_log = []
+        if isinstance(model_joint, torch.nn.DataParallel):
+            logs = model_joint.module.diffu.freq_noise_fn.param_log
+        else:
+            logs = model_joint.diffu.freq_noise_fn.param_log
+
+        if len(logs) > 0:
+            start_mean = sum([x["start"] for x in logs]) / len(logs)
+            end_mean = sum([x["end"] for x in logs]) / len(logs)
+            tau_mean = sum([x["tau"] for x in logs]) / len(logs)
+
+            with open("lambda_track.txt", "a") as f:
+                f.write(
+                    f"Epoch {epoch_temp + 1}: "
+                    f"start={start_mean:.4f}, end={end_mean:.4f}, tau={tau_mean:.4f}\n"
+                )
+
+            # 记得清空记录，防止重复累计
+            if isinstance(model_joint, torch.nn.DataParallel):
+                model_joint.module.diffu.freq_noise_fn.param_log = []
+            else:
+                model_joint.diffu.freq_noise_fn.param_log = []
 
         if epoch_temp != 0 and epoch_temp % args.eval_interval == 0:
             print('start predicting: ', datetime.datetime.now())
@@ -182,7 +182,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                         model_to_use = model_joint.module if isinstance(model_joint, nn.DataParallel) else model_joint
                         emb = model_to_use.item_embeddings(seq_input)  # [B, L, d]
                         z_T = torch.randn_like(emb)
-                        rep_diffu = model_to_use.diffu.reverse_cfg(emb,(seq_input > 0).float())
+                        rep_diffu = model_to_use.reverse(emb, z_T, (seq_input > 0).float())
 
                         last_idx = (seq_input > 0).sum(dim=1).clamp(min=1) - 1
                         rep_last = rep_diffu[torch.arange(rep_diffu.size(0)), last_idx]  # 取最后非padding位置
@@ -234,7 +234,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                 model_to_use = model_joint.module if isinstance(model_joint, nn.DataParallel) else model_joint
                 emb = model_to_use.item_embeddings(seq_input)  # [B, L, d]
                 z_T = torch.randn_like(emb)  # 保持相同形状
-                rep_diffu = model_to_use.diffu.reverse_cfg(emb, (seq_input > 0).float())
+                rep_diffu = model_to_use.reverse(emb, z_T, (seq_input > 0).float())
 
                 # 使用最后一个有效位置表征
                 last_idx = (seq_input > 0).sum(dim=1).clamp(min=1) - 1

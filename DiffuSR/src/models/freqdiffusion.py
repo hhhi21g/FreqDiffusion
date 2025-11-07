@@ -304,11 +304,6 @@ class Diffu_xstart(nn.Module):
             norm='ortho'
         )
 
-        self.cond_dropout = nn.Dropout(p=0.3)
-        self.context_proj = nn.Linear(self.hidden_size, self.hidden_size)
-        self.film_gamma = nn.Linear(self.hidden_size, self.hidden_size)
-        self.film_beta = nn.Linear(self.hidden_size, self.hidden_size)
-
     def timestep_embedding(self, timesteps, dim, max_period=10000):
         """
         Create sinusoidal timestep embeddings.
@@ -328,20 +323,10 @@ class Diffu_xstart(nn.Module):
             embedding = th.cat([embedding, th.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
-    def forward(self, rep_item, x_t, t, mask_seq, cond_extern=None):
+    def forward(self, rep_item, x_t, t, mask_seq):
         emb_t = self.time_embed(self.timestep_embedding(t, self.hidden_size))
         emb_t = emb_t.unsqueeze(1).expand(-1, x_t.size(1), -1)
         x_t = x_t + emb_t
-
-        if cond_extern is not None:
-            ctx = cond_extern
-
-        gamma = torch.sigmoid(self.film_gamma(ctx))
-        beta = self.film_beta(ctx)
-
-        gamma = gamma.unsqueeze(1)
-        beta = beta.unsqueeze(1)
-        x_t = gamma * x_t + 0.1 * beta
 
         # freq_code = torch.sin(t[:, None] / 2000 * math.pi).unsqueeze(1).expand_as(x_t)
         # x_t = x_t + 0.1 * freq_code
@@ -390,6 +375,12 @@ class FreqFilterLayer(nn.Module):
         self.k = k
         self.beta = beta
         self.out_dropout = nn.Dropout(hidden_dropout_prob)
+        # self.gate_mlp = nn.Sequential(
+        #     nn.Linear(hidden_size, hidden_size // 2),
+        #     nn.ReLU(),
+        #     nn.Linear(hidden_size // 2, 3),
+        #     nn.Softmax(dim=-1)
+        # )
 
         self.band_attn = FreqBandAttention(hidden_size=self.hidden_size, num_heads=4)
 
@@ -434,6 +425,15 @@ class FreqFilterLayer(nn.Module):
         keep = torch.sigmoid(self.beta * (mag - tau_val))
         X = X * keep
 
+        seq_repr = x.mean(dim=1)
+        # gate = self.gate_mlp(seq_repr)
+
+        # w_low, w_band, w_high = gate[:, 0], gate[:, 1], gate[:, 2]
+
+        # w_low = w_low[:, None, None]
+        # w_band = w_band[:, None, None]
+        # w_high = w_high[:, None, None]
+
         # 计算 s1, s2
         s1 = torch.sigmoid(self.raw_s1)
         s2 = torch.sigmoid(self.raw_s2)
@@ -451,6 +451,13 @@ class FreqFilterLayer(nn.Module):
 
         x_attn = self.band_attn(x, bands_three)
 
+        # X_filt = (
+        #         (X * low_m) * w_low +
+        #         (X * band_m) * w_band +
+        #         (X * high_m) * w_high
+        # )
+
+        # x_filt = torch.fft.irfft(X_filt, n=T, dim=1, norm=self.norm)
         out = self.ln(self.out_dropout(x_attn) + self.res_gate * x)
 
         return out
@@ -546,23 +553,28 @@ class FreqNoiseGenerator(nn.Module):
 
     # def get_lambda(self, t, T, delta=0.5):
     #     return torch.sigmoid((t.float() - 0.5 * T) / (delta * T))
-
-    def get_lambda(self, t, T, L, start=0.0, end=3.0, tau=0.2):
+    def get_lambda(self, t, T, L, start=-2.54, end=2.30, tau=6.56):
         ratio = t.float() / T
 
-        start = -3.0 + 3.0 * torch.sigmoid(self.raw_start)
-        end = 3.0 * torch.sigmoid(self.raw_end)
-        tau = 0.01 * (1000.0 / 0.01) ** torch.sigmoid(self.raw_tau)
+        # start = -3.0 + 3.0 * torch.sigmoid(self.raw_start)
+        # end = 3.0 * torch.sigmoid(self.raw_end)
+        # tau = 0.01 * (1000.0 / 0.01) ** torch.sigmoid(self.raw_tau)
 
         linear_term = start + (end - start) * ratio
         # tau = 0.5 * (L / 15) ** 1.5
         # tau = torch.tensor(tau, dtype=torch.float32, device=t.device)
         # tau = torch.clamp(tau, min=0.3, max=3.0)
         lam = torch.sigmoid(linear_term / tau)
+        # self.param_log.append({
+        #     "start": float(start.item()),
+        #     "end": float(end.item()),
+        #     "tau": float(tau.item())
+        # })
+
         self.param_log.append({
-            "start": float(start.item()),
-            "end": float(end.item()),
-            "tau": float(tau.item())
+            "start": start,
+            "end": end,
+            "tau": tau
         })
         return lam
 
@@ -825,68 +837,9 @@ class FreqDiffusion(nn.Module):
                 noise_x_t = self.p_sample(item_rep, noise_x_t, t, mask_seq)
         return noise_x_t
 
-    @torch.no_grad()
-    def reverse_cfg(self, item_rep, mask_seq, guidance_scale=1.5):
-        """
-        Classifier-Free Guidance + 频率噪声反扩散推理
-        item_rep: 原始输入序列嵌入 [B, L, H]
-        mask_seq: 序列mask
-        """
-        device = item_rep.device
-        B, L, H = item_rep.shape
+    def forward(self, item_rep, item_tag, mask_seq):
 
-        # === Step 1: 初始化纯噪声 ===
-        z_t = torch.randn_like(item_rep)
-
-        # === Step 2: 构造上下文向量 ctx（来自历史语义） ===
-        denom = (mask_seq.sum(dim=1, keepdim=True) + 1e-6)
-        ctx = (item_rep * mask_seq.unsqueeze(-1)).sum(dim=1) / denom
-        ctx = self.xstart_model.context_proj(ctx)
-        ctx = self.xstart_model.cond_dropout(ctx)
-
-        # === Step 3: 反扩散循环 ===
-        for i in reversed(range(self.num_timesteps)):
-            t = torch.tensor([i] * B, device=device)
-
-            # ---------- (1) cond / uncond 去噪 ----------
-            x_0_cond, _ = self.xstart_model(
-                item_rep, z_t, self._scale_timesteps(t), mask_seq, cond_extern=ctx
-            )
-            x_0_uncond, _ = self.xstart_model(
-                item_rep, z_t, self._scale_timesteps(t), mask_seq, cond_extern=torch.zeros_like(ctx)
-            )
-
-            # ---------- (2) CFG 融合 ----------
-            x_0 = x_0_uncond + guidance_scale * (x_0_cond - x_0_uncond)
-
-            if x_0.dim() == 2:
-                x_0 = x_0.unsqueeze(1).expand_as(z_t)
-
-            # ---------- (3) 用 x0 计算 posterior mean ----------
-            model_mean = (
-                    _extract_into_tensor(self.posterior_mean_coef1, t, z_t.shape) * x_0
-                    + _extract_into_tensor(self.posterior_mean_coef2, t, z_t.shape) * z_t
-            )
-            model_log_variance = _extract_into_tensor(
-                np.log(np.append(self.posterior_variance[1], self.betas[1:])),
-                t, z_t.shape
-            )
-
-            # ---------- (4) 每步注入频率噪声 ----------
-            if self.use_freq_noise:
-                noise = self.freq_noise_fn(t, z_t.shape)
-            else:
-                noise = torch.randn_like(z_t)
-
-            nonzero_mask = (t != 0).float().view(-1, *([1] * (len(z_t.shape) - 1)))
-            z_t = model_mean + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
-
-        # === Step 4: 返回最终生成的干净序列表示 ===
-        return z_t
-
-    def forward(self, item_rep, item_tag, mask_seq, guidance_scale: float = 1.5, train_flag: bool = True):
-
-        B = item_rep.size(0)
+        noise = th.randn_like(item_tag)
         t, weights = self.schedule_sampler.sample(item_rep.shape[0],
                                                   item_tag.device)  ## t is sampled from schedule_sampler
 
@@ -898,27 +851,8 @@ class FreqDiffusion(nn.Module):
 
         x_t = self.q_sample(item_rep, t, noise=noise)
 
-        denom = (mask_seq.sum(dim=1, keepdim=True) + 1e-6)
-        ctx = (item_rep * mask_seq.unsqueeze(-1)).sum(dim=1) / denom  # 每条序列所有有效emb的平均向量
-        ctx = self.xstart_model.context_proj(ctx)
-        ctx = self.xstart_model.cond_dropout(ctx)
+        # eps, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ## eps predict
+        # x_0 = self._predict_xstart_from_eps(x_t, t, eps)
 
-        if train_flag:  # 训练阶段，随机drop out
-            drop_mask = torch.rand(B, device=item_rep.device) < 0.5
-            ctx_train = ctx.clone()
-            ctx_train[drop_mask] = 0.0  # uncond, 模型同时学习有上下文和无上下文
-            x_0, item_rep_out = self.xstart_model(
-                item_rep, x_t, self._scale_timesteps(t), mask_seq,
-                cond_extern=ctx_train
-            )
-        else:  # 推理阶段，CFG融合
-            # 有上下文
-            x_0_cond, _ = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq, cond_extern=ctx)
-
-            # 无上下文
-            ctx_uncond = torch.zeros_like(ctx)
-            x_0_uncond, _ = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq, cond_extern=ctx_uncond)
-
-            x_0 = x_0_uncond + guidance_scale * (x_0_cond - x_0_uncond)
-
+        x_0, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ##output predict
         return x_0, item_rep_out, weights, t
