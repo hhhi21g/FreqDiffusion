@@ -137,7 +137,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
 
                     lam_max = 0.1
                     warm = 20
-                    lam = 0.0 if epoch_temp < warm else lam_max
+                    lam = lam_max * min(epoch_temp / warm, 1.0)
 
                     if L_consist is not None and lam > 0:
                         loss_all = loss_all + lam * L_consist

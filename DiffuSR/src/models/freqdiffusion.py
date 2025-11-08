@@ -562,8 +562,8 @@ class FreqNoiseGenerator(nn.Module):
 
         linear_term = start + (end - start) * ratio
         # tau = 0.5 * (L / 15) ** 1.5
-        tau = torch.tensor(tau, dtype=torch.float32, device=t.device)
-        tau = torch.clamp(tau, min=0.3, max=3.0)
+        # tau = torch.tensor(tau, dtype=torch.float32, device=t.device)
+        # tau = torch.clamp(tau, min=0.3, max=3.0)
         lam = torch.sigmoid(linear_term / tau)
         self.param_log.append({
             "start": float(start.item()),
@@ -749,7 +749,7 @@ class FreqDiffusion(nn.Module):
         )
 
         x_t = torch.fft.irfft(X_t, n=x_start.size(1), dim=1, norm='ortho')
-        x_t = x_t / (x_t.std(dim=(1, 2), keepdim=True) + 1e-6)
+        # x_t = x_t / (x_t.std(dim=(1, 2), keepdim=True) + 1e-6)
         return x_t, X_t
 
     def time_map(self):
@@ -894,10 +894,10 @@ class FreqDiffusion(nn.Module):
             X_t = model_mean_freq + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
 
         # 维持频谱能量一致（防止高频能量塌缩）
-        energy_target = torch.mean(torch.abs(torch.fft.rfft(item_rep, dim=1, norm='ortho')) ** 2, dim=(1, 2),
-                                   keepdim=True)
-        energy_current = torch.mean(torch.abs(X_t) ** 2, dim=(1, 2), keepdim=True)
-        X_t = X_t * torch.sqrt(energy_target / (energy_current + 1e-8))
+        # energy_target = torch.mean(torch.abs(torch.fft.rfft(item_rep, dim=1, norm='ortho')) ** 2, dim=(1, 2),
+        #                            keepdim=True)
+        # energy_current = torch.mean(torch.abs(X_t) ** 2, dim=(1, 2), keepdim=True)
+        # X_t = X_t * torch.sqrt(energy_target / (energy_current + 1e-8))
 
         x_recon = torch.fft.irfft(X_t, n=item_rep.size(1), dim=1, norm='ortho')
         return x_recon

@@ -4,3 +4,11 @@
 2025/11/08 14:35:44 - __main__ - INFO - 160 - trainer - [52/257] Loss: 13.5627, L_consist: 0.0000
 2025/11/08 14:35:56 - __main__ - INFO - 160 - trainer - [104/257] Loss: 13.0560, L_consist: 0.0000
 2025/11/08 14:36:08 - __main__ - INFO - 160 - trainer - [156/257] Loss: 12.2348, L_consist: 0.0000
+2025/11/08 14:36:21 - __main__ - INFO - 160 - trainer - [208/257] Loss: 11.6398, L_consist: 0.0000
+2025/11/08 14:36:33 - __main__ - INFO - 236 - trainer - {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
+2025/11/08 14:36:33 - __main__ - INFO - 237 - trainer - {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
+2025/11/08 14:39:06 - __main__ - INFO - 284 - trainer - Test------------------------------------------------------
+2025/11/08 14:39:06 - __main__ - INFO - 286 - trainer - {'HR@5': 0.0977, 'NDCG@5': 0.0588, 'HR@10': 0.1509, 'NDCG@10': 0.076, 'HR@20': 0.2885, 'NDCG@20': 0.1104}
+2025/11/08 14:39:06 - __main__ - INFO - 288 - trainer - Best Eval---------------------------------------------------------
+2025/11/08 14:39:06 - __main__ - INFO - 291 - trainer - {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
+2025/11/08 14:39:06 - __main__ - INFO - 292 - trainer - {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}

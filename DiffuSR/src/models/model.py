@@ -85,16 +85,16 @@ class Att_Diffuse_model(nn.Module):
     #     reverse_pre = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
     #     return reverse_pre
     def reverse(self, item_rep, noise_x_t, mask_seq):
-        ### ✅ 混合时域+频域反向扩散
         rep_time = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
-        t_tensor = torch.randint(0, self.diffu.num_timesteps, (item_rep.size(0),), device=item_rep.device)
-        freq_noise = self.diffu.freq_noise_fn(t_tensor, item_rep.shape)
-
-        rep_freq = self.diffu.reverse_p_sample_freq(item_rep, torch.fft.rfft(freq_noise, dim=1), mask_seq)
+        # 频域分支权重极小（例如 0.1），避免把时域结果拖崩
+        with torch.no_grad():
+            t_tensor = torch.randint(0, self.diffu.num_timesteps, (item_rep.size(0),), device=item_rep.device)
+            freq_noise = self.diffu.freq_noise_fn(t_tensor, item_rep.shape)
+            rep_freq = self.diffu.reverse_p_sample_freq(item_rep, torch.fft.rfft(freq_noise, dim=1), mask_seq)
 
         alpha = torch.sigmoid(torch.mean(rep_time, dim=-1, keepdim=True))
-        rep_diffu = alpha * rep_time + (1 - alpha) * rep_freq
-
+        w = 0.1  # << 非常小的融合权重
+        rep_diffu = (1 - w) * rep_time + w * rep_freq
         return rep_diffu
 
 
