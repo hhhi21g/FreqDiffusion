@@ -420,3 +420,4 @@ Epoch 418: start=-2.5493, end=2.3047, tau=6.5646
 Epoch 419: start=-2.5493, end=2.3047, tau=6.5646
 Epoch 420: start=-2.5493, end=2.3047, tau=6.5646
 Epoch 421: start=-2.5493, end=2.3047, tau=6.5646
+Epoch 1: start=-2.4527, end=2.4483, tau=3.0000

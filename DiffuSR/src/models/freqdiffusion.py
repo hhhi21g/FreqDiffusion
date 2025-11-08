@@ -556,26 +556,26 @@ class FreqNoiseGenerator(nn.Module):
     def get_lambda(self, t, T, L, start=-2.54, end=2.30, tau=6.56):
         ratio = t.float() / T
 
-        # start = -3.0 + 3.0 * torch.sigmoid(self.raw_start)
-        # end = 3.0 * torch.sigmoid(self.raw_end)
-        # tau = 0.01 * (1000.0 / 0.01) ** torch.sigmoid(self.raw_tau)
+        start = -3.0 + 3.0 * torch.sigmoid(self.raw_start)
+        end = 3.0 * torch.sigmoid(self.raw_end)
+        tau = 0.01 * (1000.0 / 0.01) ** torch.sigmoid(self.raw_tau)
 
         linear_term = start + (end - start) * ratio
         # tau = 0.5 * (L / 15) ** 1.5
-        # tau = torch.tensor(tau, dtype=torch.float32, device=t.device)
-        # tau = torch.clamp(tau, min=0.3, max=3.0)
+        tau = torch.tensor(tau, dtype=torch.float32, device=t.device)
+        tau = torch.clamp(tau, min=0.3, max=3.0)
         lam = torch.sigmoid(linear_term / tau)
-        # self.param_log.append({
-        #     "start": float(start.item()),
-        #     "end": float(end.item()),
-        #     "tau": float(tau.item())
-        # })
-
         self.param_log.append({
-            "start": start,
-            "end": end,
-            "tau": tau
+            "start": float(start.item()),
+            "end": float(end.item()),
+            "tau": float(tau.item())
         })
+
+        # self.param_log.append({
+        #     "start": start,
+        #     "end": end,
+        #     "tau": tau
+        # })
         return lam
 
     def forward(self, t_tensor, shape):
