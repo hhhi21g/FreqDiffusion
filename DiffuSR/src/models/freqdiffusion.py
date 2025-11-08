@@ -728,6 +728,7 @@ class FreqDiffusion(nn.Module):
             mask = th.broadcast_to(mask.unsqueeze(dim=-1), x_start.shape)  ## mask: [0,0,0,1,1,1,1,1]
             return th.where(mask == 0, x_start, x_t)  ## replace the output_target_seq embedding (x_0) as x_t
 
+<<<<<<< HEAD
     # 前向扩散
     def q_sample_freq(self, x_start, t, noise=None):
         X0 = torch.fft.rfft(x_start, dim=1, norm='ortho')
@@ -752,6 +753,8 @@ class FreqDiffusion(nn.Module):
         # x_t = x_t / (x_t.std(dim=(1, 2), keepdim=True) + 1e-6)
         return x_t, X_t
 
+=======
+>>>>>>> parent of 40f394a (引入频域的扩散v1)
     def time_map(self):
         timestep_map = []
         for i in range(len(self.alphas_cumprod)):
@@ -861,6 +864,7 @@ class FreqDiffusion(nn.Module):
                 noise_x_t = self.p_sample(item_rep, noise_x_t, t, mask_seq)
         return noise_x_t
 
+<<<<<<< HEAD
     # 频域反向扩散
     def reverse_p_sample_freq(self, item_rep, X_t, mask_seq):
         device = item_rep.device
@@ -902,6 +906,8 @@ class FreqDiffusion(nn.Module):
         x_recon = torch.fft.irfft(X_t, n=item_rep.size(1), dim=1, norm='ortho')
         return x_recon
 
+=======
+>>>>>>> parent of 40f394a (引入频域的扩散v1)
     def forward(self, item_rep, item_tag, mask_seq):
 
         noise = th.randn_like(item_tag)

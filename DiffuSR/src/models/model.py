@@ -42,6 +42,7 @@ class Att_Diffuse_model(nn.Module):
         self.freq_predictor = nn.Linear(self.emb_dim,self.emb_dim)
 
     def diffu_pre(self, item_rep, tag_emb, mask_seq):
+<<<<<<< HEAD
         # 时域扩散
         rep_time_out, rep_freq_out, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
         seq_rep_diffu = rep_time_out  # 时域输出
@@ -80,6 +81,10 @@ class Att_Diffuse_model(nn.Module):
         L_consist = L_consist * weights_c
 
         return rep_fused, item_rep_out, weights, t, L_consist,rep_freq
+=======
+        seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
+        return seq_rep_diffu, item_rep_out, weights, t
+>>>>>>> parent of 40f394a (引入频域的扩散v1)
 
     # def reverse(self, item_rep, noise_x_t, mask_seq):
     #     reverse_pre = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
@@ -125,6 +130,7 @@ class Att_Diffuse_model(nn.Module):
         """
         return self.loss_ce(scores, labels.squeeze(-1))
 
+<<<<<<< HEAD
     def loss_consistency(self, rep_freq, rep_time):
         # 🔧 FFT在float16下对非2幂长度会报错，因此强制用float32计算
         rep_time_32 = rep_time.to(torch.float32)
@@ -141,6 +147,8 @@ class Att_Diffuse_model(nn.Module):
                      F.mse_loss(torch.sin(phase_time), torch.sin(phase_pred))
         return loss_amp + 0.1 * loss_phase
 
+=======
+>>>>>>> parent of 40f394a (引入频域的扩散v1)
     def diffu_rep_pre(self, rep_diffu):
         scores = torch.matmul(rep_diffu, self.item_embeddings.weight.t())
         return scores
@@ -190,16 +198,19 @@ class Att_Diffuse_model(nn.Module):
 
         if train_flag:
             tag_emb = self.item_embeddings(tag.squeeze(-1))  ## B x H
-            outputs = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
+            rep_diffu, rep_item, weights, t = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
 
             # item_rep_dis = self.regularization_rep(rep_item, mask_seq)
             # seq_rep_dis = self.regularization_seq_item_rep(rep_diffu, rep_item, mask_seq)
 
+<<<<<<< HEAD
             if len(outputs) == 5:
                 rep_diffu, rep_item, weights, t ,L_consist= outputs
                 rep_freq = None
             else:
                 rep_diffu, rep_item, weights, t, L_consist,rep_freq = outputs
+=======
+>>>>>>> parent of 40f394a (引入频域的扩散v1)
             item_rep_dis = None
             seq_rep_dis = None
             ### ✅ 新增频域预测分支监督
@@ -230,7 +241,7 @@ class Att_Diffuse_model(nn.Module):
         # seq_rep = item_rep[:, -1, :]
         # scores = torch.matmul(seq_rep, self.item_embeddings.weight.t())
         scores = None
-        return scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis,L_consist
+        return scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis
 
 
 def create_model_diffu(args):
