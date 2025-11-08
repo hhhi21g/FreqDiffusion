@@ -41,8 +41,23 @@ class Att_Diffuse_model(nn.Module):
         self.loss_mse = nn.MSELoss()
 
     def diffu_pre(self, item_rep, tag_emb, mask_seq):
+        # 时域扩散
         seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
-        return seq_rep_diffu, item_rep_out, weights, t
+
+        # 频域扩散
+        x_t_freq, X_t = self.diffu.q_sample_freq(item_rep, t)
+        rep_freq, _ = self.diffu.xstart_model(item_rep, x_t_freq, self.diffu._scale_timesteps(t), mask_seq)
+
+        # 一致性约束
+        L_consist = self.loss_consistency(rep_freq, seq_rep_diffu)
+
+        # 双域融合输出
+        alpha = 0.5
+        rep_fused = alpha * seq_rep_diffu + (1 - alpha) * rep_freq
+
+        L_consist = L_consist * 10
+
+        return rep_fused, item_rep_out, weights, t, L_consist
 
     def reverse(self, item_rep, noise_x_t, mask_seq):
         reverse_pre = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
@@ -74,6 +89,11 @@ class Att_Diffuse_model(nn.Module):
         scores = torch.matmul(rep_diffu_norm, item_emb_norm.t())/temperature
         """
         return self.loss_ce(scores, labels.squeeze(-1))
+
+    def loss_consistency(self, rep_freq, rep_time):
+        freq_fft = torch.fft.rfft(rep_time, dim=1, norm='ortho')
+        freq_pred = torch.fft.rfft(rep_freq, dim=1, norm='ortho')
+        return torch.mean((freq_fft.real - freq_pred.real) ** 2 + (freq_fft.imag - freq_pred.imag) ** 2)
 
     def diffu_rep_pre(self, rep_diffu):
         scores = torch.matmul(rep_diffu, self.item_embeddings.weight.t())
@@ -124,11 +144,16 @@ class Att_Diffuse_model(nn.Module):
 
         if train_flag:
             tag_emb = self.item_embeddings(tag.squeeze(-1))  ## B x H
-            rep_diffu, rep_item, weights, t = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
+            outputs = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
 
             # item_rep_dis = self.regularization_rep(rep_item, mask_seq)
             # seq_rep_dis = self.regularization_seq_item_rep(rep_diffu, rep_item, mask_seq)
 
+            if len(outputs) == 4:
+                rep_diffu, rep_item, weights, t = outputs
+                L_consist = None
+            else:
+                rep_diffu, rep_item, weights, t, L_consist = outputs
             item_rep_dis = None
             seq_rep_dis = None
         else:
@@ -143,7 +168,7 @@ class Att_Diffuse_model(nn.Module):
         # seq_rep = item_rep[:, -1, :]
         # scores = torch.matmul(seq_rep, self.item_embeddings.weight.t())
         scores = None
-        return scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis
+        return scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis,L_consist
 
 
 def create_model_diffu(args):

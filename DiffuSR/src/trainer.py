@@ -111,22 +111,36 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
 
         for index_temp, train_batch in enumerate(tra_data_loader):
             train_batch = [x.to(device) for x in train_batch]
-            seq, label = train_batch[0], train_batch[1]  # ✅ 提前统一解包
+            seq, label = train_batch[0], train_batch[1]
             optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast():
                 if args.model.lower() == 'sasrec':
                     scores, diffu_rep, _, _, _, _, loss_all = model_joint(seq, label)
                     loss_all = loss_all.mean()
                 else:
-                    _, diffu_rep, weights, t, _, _ = model_joint(seq, label)
-                    if isinstance(model_joint, nn.DataParallel):
-                        loss_unweighted = model_joint.module.loss_diffu_ce(diffu_rep, label)
+                    outputs = model_joint(seq, label)
+                    if len(outputs) == 6:
+                        scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis = outputs
+                        L_consist = 0
                     else:
-                        loss_unweighted = model_joint.loss_diffu_ce(diffu_rep, label)
+                        scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis, L_consist = outputs
+
+                    if isinstance(model_joint, nn.DataParallel):
+                        loss_unweighted = model_joint.module.loss_diffu_ce(rep_diffu, label)
+                    else:
+                        loss_unweighted = model_joint.loss_diffu_ce(rep_diffu, label)
+
                     if weights is not None:
                         loss_all = (loss_unweighted * weights.detach()).mean()
                     else:
                         loss_all = loss_unweighted.mean()
+
+                    lam_max = 0.1
+                    warm = 20
+                    lam = 0.0 if epoch_temp < warm else lam_max
+
+                    if L_consist is not None and lam > 0:
+                        loss_all = loss_all + lam * L_consist
 
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)
@@ -134,9 +148,16 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
             # loss_all.backward()
             #
             # optimizer.step()
+            # if index_temp % int(len(tra_data_loader) / 5 + 1) == 0:
+            #     print('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
+            #     logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
             if index_temp % int(len(tra_data_loader) / 5 + 1) == 0:
-                print('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
-                logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
+                msg = f"[{index_temp}/{len(tra_data_loader)}] Loss: {loss_all.item():.4f}"
+                if L_consist is not None:
+                    msg += f", L_consist: {lam * L_consist.item():.4f}"
+                print(msg)
+                logger.info(msg)
+
         print("loss in epoch {}: {}".format(epoch_temp, loss_all.item()))
         lr_scheduler.step()
 

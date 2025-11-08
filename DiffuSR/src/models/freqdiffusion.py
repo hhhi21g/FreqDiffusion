@@ -728,6 +728,24 @@ class FreqDiffusion(nn.Module):
             mask = th.broadcast_to(mask.unsqueeze(dim=-1), x_start.shape)  ## mask: [0,0,0,1,1,1,1,1]
             return th.where(mask == 0, x_start, x_t)  ## replace the output_target_seq embedding (x_0) as x_t
 
+    def q_sample_freq(self, x_start, t, noise=None):
+        X0 = torch.fft.rfft(x_start, dim=1, norm='ortho')
+
+        if noise is None:
+            if self.use_freq_noise and self.freq_noise_fn is not None:
+                noise_time = self.freq_noise_fn(t, x_start.shape)
+                noise = torch.fft.rfft(noise_time, dim=1, norm='ortho')
+            else:
+                noise = torch.randn_like(X0)
+
+        X_t = (
+                _extract_into_tensor(self.sqrt_alphas_cumprod, t, X0.shape) * X0
+                + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, X0.shape) * noise
+        )
+
+        x_t = torch.fft.irfft(X_t, n=x_start.size(1), dim=1, norm='ortho')
+        return x_t, X_t
+
     def time_map(self):
         timestep_map = []
         for i in range(len(self.alphas_cumprod)):
@@ -836,6 +854,40 @@ class FreqDiffusion(nn.Module):
             with th.no_grad():
                 noise_x_t = self.p_sample(item_rep, noise_x_t, t, mask_seq)
         return noise_x_t
+
+    def reverse_p_sample_freq(self, item_rep, X_t, mask_seq):
+        device = item_rep.device
+        indices = list(range(self.num_timesteps))[::-1]
+
+        for i in indices:
+            t = torch.tensor([i] * item_rep.shape[0], device=device)
+
+            x_t = torch.fft.irfft(X_t, n=item_rep.size(1), dim=1, norm='ortho')
+
+            model_mean, model_log_variance = self.p_mean_variance(item_rep, x_t, t, mask_seq)
+
+            model_mean_freq = torch.fft.rfft(model_mean, dim=1, norm='ortho')
+
+            model_log_variance = _extract_into_tensor(
+                np.log(np.append(self.posterior_variance[1], self.betas[1:])),
+                t, X_t.shape
+            )
+
+            # 4️⃣ 生成频域噪声
+            if getattr(self, 'use_freq_noise', True):
+                noise_time = self.freq_noise_fn(t, item_rep.shape)
+                noise = torch.fft.rfft(noise_time, dim=1, norm='ortho')
+            else:
+                noise = torch.randn_like(X_t)
+
+            nonzero_mask = ((t != 0).float().view(-1, *([1] * (len(X_t.shape) - 1))))
+
+            # 5️⃣ 扩散一步：保持每频点独立方差
+            X_t = model_mean_freq + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
+
+            # 6️⃣ 最后回到时域输出
+        x_recon = torch.fft.irfft(X_t, n=item_rep.size(1), dim=1, norm='ortho')
+        return x_recon
 
     def forward(self, item_rep, item_tag, mask_seq):
 
