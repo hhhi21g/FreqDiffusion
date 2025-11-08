@@ -145,6 +145,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)
             scaler.update()
+            model_joint.global_epoch_ratio = epoch_temp / epochs
             # loss_all.backward()
             #
             # optimizer.step()

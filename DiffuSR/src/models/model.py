@@ -39,29 +39,64 @@ class Att_Diffuse_model(nn.Module):
         self.loss_ce = nn.CrossEntropyLoss()
         self.loss_ce_rec = nn.CrossEntropyLoss(reduction='none')
         self.loss_mse = nn.MSELoss()
+        self.freq_predictor = nn.Linear(self.emb_dim,self.emb_dim)
 
     def diffu_pre(self, item_rep, tag_emb, mask_seq):
         # 时域扩散
-        seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
+        rep_time_out, rep_freq_out, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
+        seq_rep_diffu = rep_time_out  # 时域输出
+        rep_freq = self.freq_predictor(rep_freq_out)  # 频域输出经过预测头
+
+        # rep_time_out 是时域向量；item_rep_out 是时域序列 (来自 xstart_model 的第二个返回值)
+        # 让频域向量变成“伪序列”，与 item_rep_out 对齐
+        if item_rep_out.dim() == 3:
+            T = item_rep_out.size(1)
+            rep_freq_seq = rep_freq.unsqueeze(1).expand(-1, T, -1)  # [B,1,H] -> [B,T,H]
+        else:
+            rep_freq_seq = rep_freq  # 兜底：极少数情况下仍保持向量
+
+        # 一致性用序列对序列
+        L_consist = self.loss_consistency(rep_freq_seq, item_rep_out)
+
 
         # 频域扩散
-        x_t_freq, X_t = self.diffu.q_sample_freq(item_rep, t)
-        rep_freq, _ = self.diffu.xstart_model(item_rep, x_t_freq, self.diffu._scale_timesteps(t), mask_seq)
+        # x_t_freq, X_t = self.diffu.q_sample_freq(item_rep, t)
+        # rep_freq, _ = self.diffu.xstart_model(item_rep, x_t_freq, self.diffu._scale_timesteps(t), mask_seq)
+        #
+        # rep_freq = self.freq_predictor(rep_freq)
 
         # 一致性约束
-        L_consist = self.loss_consistency(rep_freq, seq_rep_diffu)
+        # L_consist = self.loss_consistency(rep_freq, seq_rep_diffu)
 
         # 双域融合输出
-        alpha = 0.5
+        # alpha = 0.5
+        alpha = torch.sigmoid(torch.mean(seq_rep_diffu, dim=-1, keepdim=True))
         rep_fused = alpha * seq_rep_diffu + (1 - alpha) * rep_freq
 
-        L_consist = L_consist * 10
+        # L_consist = L_consist * 10
+        ### ✅ 一致性损失权重缓增，最高不超过 0.5 倍
+        epoch_ratio = getattr(self, 'global_epoch_ratio', 0.0)
+        weights_c = 0.5 + 0.5 * min(epoch_ratio * 5, 1.0)
+        L_consist = L_consist * weights_c
 
-        return rep_fused, item_rep_out, weights, t, L_consist
+        return rep_fused, item_rep_out, weights, t, L_consist,rep_freq
 
+    # def reverse(self, item_rep, noise_x_t, mask_seq):
+    #     reverse_pre = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
+    #     return reverse_pre
     def reverse(self, item_rep, noise_x_t, mask_seq):
-        reverse_pre = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
-        return reverse_pre
+        ### ✅ 混合时域+频域反向扩散
+        rep_time = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
+        t_tensor = torch.randint(0, self.diffu.num_timesteps, (item_rep.size(0),), device=item_rep.device)
+        freq_noise = self.diffu.freq_noise_fn(t_tensor, item_rep.shape)
+
+        rep_freq = self.diffu.reverse_p_sample_freq(item_rep, torch.fft.rfft(freq_noise, dim=1), mask_seq)
+
+        alpha = torch.sigmoid(torch.mean(rep_time, dim=-1, keepdim=True))
+        rep_diffu = alpha * rep_time + (1 - alpha) * rep_freq
+
+        return rep_diffu
+
 
     def loss_rec(self, scores, labels):
         return self.loss_ce(scores, labels.squeeze(-1))
@@ -91,9 +126,20 @@ class Att_Diffuse_model(nn.Module):
         return self.loss_ce(scores, labels.squeeze(-1))
 
     def loss_consistency(self, rep_freq, rep_time):
-        freq_fft = torch.fft.rfft(rep_time, dim=1, norm='ortho')
-        freq_pred = torch.fft.rfft(rep_freq, dim=1, norm='ortho')
-        return torch.mean((freq_fft.real - freq_pred.real) ** 2 + (freq_fft.imag - freq_pred.imag) ** 2)
+        # 🔧 FFT在float16下对非2幂长度会报错，因此强制用float32计算
+        rep_time_32 = rep_time.to(torch.float32)
+        rep_freq_32 = rep_freq.to(torch.float32)
+
+        F_time = torch.fft.rfft(rep_time_32, dim=1, norm='ortho')
+        F_pred = torch.fft.rfft(rep_freq_32, dim=1, norm='ortho')
+
+        amp_time, amp_pred = torch.abs(F_time), torch.abs(F_pred)
+        phase_time, phase_pred = torch.angle(F_time), torch.angle(F_pred)
+
+        loss_amp = F.mse_loss(amp_time, amp_pred)
+        loss_phase = F.mse_loss(torch.cos(phase_time), torch.cos(phase_pred)) + \
+                     F.mse_loss(torch.sin(phase_time), torch.sin(phase_pred))
+        return loss_amp + 0.1 * loss_phase
 
     def diffu_rep_pre(self, rep_diffu):
         scores = torch.matmul(rep_diffu, self.item_embeddings.weight.t())
@@ -149,13 +195,29 @@ class Att_Diffuse_model(nn.Module):
             # item_rep_dis = self.regularization_rep(rep_item, mask_seq)
             # seq_rep_dis = self.regularization_seq_item_rep(rep_diffu, rep_item, mask_seq)
 
-            if len(outputs) == 4:
-                rep_diffu, rep_item, weights, t = outputs
-                L_consist = None
+            if len(outputs) == 5:
+                rep_diffu, rep_item, weights, t ,L_consist= outputs
+                rep_freq = None
             else:
-                rep_diffu, rep_item, weights, t, L_consist = outputs
+                rep_diffu, rep_item, weights, t, L_consist,rep_freq = outputs
             item_rep_dis = None
             seq_rep_dis = None
+            ### ✅ 新增频域预测分支监督
+            if rep_freq is not None:
+                # rep_freq 可能是 [B,H] 或 [B,T,H]，统一成 [B,H]
+                if rep_freq.dim() == 3:
+                    rep_freq_vec = rep_freq[:, -1, :]  # 取最后一个时间步
+                else:
+                    rep_freq_vec = rep_freq
+
+                scores_freq = torch.matmul(rep_freq_vec, self.item_embeddings.weight.t())
+                loss_freq = self.loss_ce(scores_freq, tag.squeeze(-1))
+                self.loss_freq_branch = float(torch.nan_to_num(loss_freq.detach()).cpu())
+
+            else:
+                self.loss_freq_branch = 0.0
+
+
         else:
             # noise_x_t = th.randn_like(tag_emb)
             noise_x_t = th.randn_like(item_embeddings[:, -1, :])

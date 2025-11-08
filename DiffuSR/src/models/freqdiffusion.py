@@ -539,7 +539,7 @@ class FreqNoiseGenerator(nn.Module):
         if self.smooth_sched == "cosine":
             # 前期低频多，后期高频多
             a = torch.sin(rho * math.pi / 2) ** 2
-            c = 0.5 * torch.cos(rho * math.pi / 2) ** 2
+            c = (torch.cos(rho * math.pi / 2) ** 2) ** 1.8
             b = torch.exp(-((rho - 0.5) ** 2) / 0.2)
         elif self.smooth_sched == "linear":
             a = rho
@@ -728,6 +728,7 @@ class FreqDiffusion(nn.Module):
             mask = th.broadcast_to(mask.unsqueeze(dim=-1), x_start.shape)  ## mask: [0,0,0,1,1,1,1,1]
             return th.where(mask == 0, x_start, x_t)  ## replace the output_target_seq embedding (x_0) as x_t
 
+    # 前向扩散
     def q_sample_freq(self, x_start, t, noise=None):
         X0 = torch.fft.rfft(x_start, dim=1, norm='ortho')
 
@@ -736,14 +737,19 @@ class FreqDiffusion(nn.Module):
                 noise_time = self.freq_noise_fn(t, x_start.shape)
                 noise = torch.fft.rfft(noise_time, dim=1, norm='ortho')
             else:
-                noise = torch.randn_like(X0)
+                noise = torch.randn_like(X0.real) + 1j * torch.randn_like(X0.real)
+
+        scaling = noise.std(dim=(1, 2), keepdim=True)
+        scaling = torch.clamp(scaling, 0.8, 1.2).detach()
 
         X_t = (
                 _extract_into_tensor(self.sqrt_alphas_cumprod, t, X0.shape) * X0
-                + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, X0.shape) * noise
+                + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, X0.shape)
+                * noise / (scaling + 1e-6)
         )
 
         x_t = torch.fft.irfft(X_t, n=x_start.size(1), dim=1, norm='ortho')
+        x_t = x_t / (x_t.std(dim=(1, 2), keepdim=True) + 1e-6)
         return x_t, X_t
 
     def time_map(self):
@@ -776,7 +782,7 @@ class FreqDiffusion(nn.Module):
 
     def q_posterior_mean_variance(self, x_start, x_t, t):
         """
-        Compute the mean and variance of the diffusion posterior: 
+        Compute the mean and variance of the diffusion posterior:
             q(x_{t-1} | x_t, x_0)
 
         """
@@ -855,6 +861,7 @@ class FreqDiffusion(nn.Module):
                 noise_x_t = self.p_sample(item_rep, noise_x_t, t, mask_seq)
         return noise_x_t
 
+    # 频域反向扩散
     def reverse_p_sample_freq(self, item_rep, X_t, mask_seq):
         device = item_rep.device
         indices = list(range(self.num_timesteps))[::-1]
@@ -862,10 +869,12 @@ class FreqDiffusion(nn.Module):
         for i in indices:
             t = torch.tensor([i] * item_rep.shape[0], device=device)
 
+            # 还原为时域，用时域的预测网络xstart_model去噪估计
             x_t = torch.fft.irfft(X_t, n=item_rep.size(1), dim=1, norm='ortho')
 
             model_mean, model_log_variance = self.p_mean_variance(item_rep, x_t, t, mask_seq)
 
+            # 预测结果重新转回频域
             model_mean_freq = torch.fft.rfft(model_mean, dim=1, norm='ortho')
 
             model_log_variance = _extract_into_tensor(
@@ -873,7 +882,7 @@ class FreqDiffusion(nn.Module):
                 t, X_t.shape
             )
 
-            # 4️⃣ 生成频域噪声
+            # 生成频域噪声
             if getattr(self, 'use_freq_noise', True):
                 noise_time = self.freq_noise_fn(t, item_rep.shape)
                 noise = torch.fft.rfft(noise_time, dim=1, norm='ortho')
@@ -882,10 +891,14 @@ class FreqDiffusion(nn.Module):
 
             nonzero_mask = ((t != 0).float().view(-1, *([1] * (len(X_t.shape) - 1))))
 
-            # 5️⃣ 扩散一步：保持每频点独立方差
             X_t = model_mean_freq + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
 
-            # 6️⃣ 最后回到时域输出
+        # 维持频谱能量一致（防止高频能量塌缩）
+        energy_target = torch.mean(torch.abs(torch.fft.rfft(item_rep, dim=1, norm='ortho')) ** 2, dim=(1, 2),
+                                   keepdim=True)
+        energy_current = torch.mean(torch.abs(X_t) ** 2, dim=(1, 2), keepdim=True)
+        X_t = X_t * torch.sqrt(energy_target / (energy_current + 1e-8))
+
         x_recon = torch.fft.irfft(X_t, n=item_rep.size(1), dim=1, norm='ortho')
         return x_recon
 
@@ -902,9 +915,14 @@ class FreqDiffusion(nn.Module):
             noise = th.randn_like(item_rep)
 
         x_t = self.q_sample(item_rep, t, noise=noise)
+        rep_time_out, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)
+
+        # ============ 频域扩散 ============
+        x_t_freq, X_t = self.q_sample_freq(item_rep, t)
+        rep_freq_out, _ = self.xstart_model(item_rep, x_t_freq, self._scale_timesteps(t), mask_seq)
 
         # eps, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ## eps predict
         # x_0 = self._predict_xstart_from_eps(x_t, t, eps)
 
-        x_0, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ##output predict
-        return x_0, item_rep_out, weights, t
+        # x_0, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ##output predict
+        return rep_time_out, rep_freq_out, item_rep_out, weights, t
