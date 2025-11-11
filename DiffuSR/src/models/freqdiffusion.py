@@ -287,8 +287,8 @@ class FiLMLayer(nn.Module):
         self.fc_beta = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, x, t_emb):
-        gamma = self.fc_gamma(t_emb).unsqueeze(1)
-        beta = self.fc_beta(t_emb).unsqueeze(1)
+        gamma = self.fc_gamma(t_emb).to(x.dtype)
+        beta = self.fc_beta(t_emb).to(x.dtype)
         return (1 + gamma) * x + beta
 
 
