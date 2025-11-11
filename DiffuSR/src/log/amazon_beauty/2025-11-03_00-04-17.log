@@ -1,9 +1,0 @@
-2025/11/03 00:04:17 - __main__ - INFO - 115 - main - Namespace(dataset='amazon_beauty', log_file='log/', random_seed=1997, max_len=50, device=device(type='cuda', index=0), num_gpu=1, batch_size=512, hidden_size=128, dropout=0.1, emb_dropout=0.3, hidden_act='gelu', num_blocks=4, epochs=1, decay_step=100, gamma=0.1, metric_ks=[5, 10, 20], optimizer='Adam', lr=0.001, loss_lambda=0, weight_decay=0, momentum=None, schedule_sampler_name='lossaware', diffusion_steps=32, lambda_uncertainty=0.001, noise_schedule='trunc_lin', rescale_timesteps=True, eval_interval=20, patience=5, description='Diffu_norm_score', long_head=False, diversity_measure=False, epoch_time_avg=False, model='freqdiffusion', maxlen=200, hidden_units=50, num_epochs=1000, num_heads=1, dropout_rate=0.2, l2_emb=0.0, inference_only=False, state_dict_path=None, norm_first=False)
-2025/11/03 00:04:18 - __main__ - INFO - 153 - trainer - Epoch: 0
-2025/11/03 00:04:20 - __main__ - INFO - 208 - trainer - [0/257] total=50.7953 main=50.7941 (bw=0.6368, ovl=0.5855, eng=0.0039)
-2025/11/03 00:04:27 - __main__ - INFO - 208 - trainer - [52/257] total=31.5132 main=31.5120 (bw=0.6364, ovl=0.5873, eng=0.0024)
-2025/11/03 00:04:34 - __main__ - INFO - 208 - trainer - [104/257] total=26.0013 main=26.0000 (bw=0.6363, ovl=0.5868, eng=0.0023)
-2025/11/03 00:04:42 - __main__ - INFO - 208 - trainer - [156/257] total=23.1667 main=23.1655 (bw=0.6362, ovl=0.5879, eng=0.0017)
-2025/11/03 00:04:49 - __main__ - INFO - 208 - trainer - [208/257] total=20.6297 main=20.6285 (bw=0.6360, ovl=0.5892, eng=0.0013)
-2025/11/03 00:04:56 - __main__ - INFO - 294 - trainer - {'Best_HR@5': 0, 'Best_NDCG@5': 0, 'Best_HR@10': 0, 'Best_NDCG@10': 0, 'Best_HR@20': 0, 'Best_NDCG@20': 0}
-2025/11/03 00:04:56 - __main__ - INFO - 295 - trainer - {'Best_epoch_HR@5': 0, 'Best_epoch_NDCG@5': 0, 'Best_epoch_HR@10': 0, 'Best_epoch_NDCG@10': 0, 'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}

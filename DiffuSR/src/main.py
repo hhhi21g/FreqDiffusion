@@ -60,7 +60,7 @@ parser.add_argument('--noise_schedule', default='trunc_lin',
                     help='Beta generation')  ## cosine, linear, trunc_cos, trunc_lin, pw_lin, sqrt
 parser.add_argument('--rescale_timesteps', default=True, help='rescal timesteps')
 parser.add_argument('--eval_interval', type=int, default=20, help='the number of epoch to eval')
-parser.add_argument('--patience', type=int, default=3, help='the number of epoch to wait before early stop')
+parser.add_argument('--patience', type=int, default=5, help='the number of epoch to wait before early stop')
 parser.add_argument('--description', type=str, default='Diffu_norm_score', help='Model brief introduction')
 parser.add_argument('--long_head', default=False, help='Long and short sequence, head and long-tail items')
 parser.add_argument('--diversity_measure', default=False, help='Measure the diversity of recommendation results')

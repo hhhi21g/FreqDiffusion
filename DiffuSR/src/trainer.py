@@ -128,20 +128,9 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                     else:
                         loss_all = loss_unweighted.mean()
 
-<<<<<<< HEAD
-                    lam_max = 0.1
-                    warm = 20
-                    lam = lam_max * min(epoch_temp / warm, 1.0)
-
-                    if L_consist is not None and lam > 0:
-                        loss_all = loss_all + lam * L_consist
-
-=======
->>>>>>> parent of 40f394a (引入频域的扩散v1)
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)
             scaler.update()
-            model_joint.global_epoch_ratio = epoch_temp / epochs
             # loss_all.backward()
             #
             # optimizer.step()
