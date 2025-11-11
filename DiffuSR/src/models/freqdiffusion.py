@@ -451,13 +451,6 @@ class FreqFilterLayer(nn.Module):
 
         x_attn = self.band_attn(x, bands_three)
 
-        # X_filt = (
-        #         (X * low_m) * w_low +
-        #         (X * band_m) * w_band +
-        #         (X * high_m) * w_high
-        # )
-
-        # x_filt = torch.fft.irfft(X_filt, n=T, dim=1, norm=self.norm)
         out = self.ln(self.out_dropout(x_attn) + self.res_gate * x)
 
         return out
@@ -551,9 +544,13 @@ class FreqNoiseGenerator(nn.Module):
         norm = a + b + c + 1e-8
         return a / norm, b / norm, c / norm
 
+<<<<<<< Updated upstream
     # def get_lambda(self, t, T, delta=0.5):
     #     return torch.sigmoid((t.float() - 0.5 * T) / (delta * T))
     def get_lambda(self, t, T, L, start=-2.54, end=2.30, tau=6.56):
+=======
+    def get_lambda(self, t, T, L, start=0.0, end=3.0, tau=0.2):
+>>>>>>> Stashed changes
         ratio = t.float() / T
 
         start = -3.0 + 3.0 * torch.sigmoid(self.raw_start)
@@ -561,9 +558,6 @@ class FreqNoiseGenerator(nn.Module):
         tau = 0.01 * (1000.0 / 0.01) ** torch.sigmoid(self.raw_tau)
 
         linear_term = start + (end - start) * ratio
-        # tau = 0.5 * (L / 15) ** 1.5
-        # tau = torch.tensor(tau, dtype=torch.float32, device=t.device)
-        # tau = torch.clamp(tau, min=0.3, max=3.0)
         lam = torch.sigmoid(linear_term / tau)
         self.param_log.append({
             "start": float(start.item()),
@@ -619,9 +613,6 @@ class FreqNoiseGenerator(nn.Module):
 
         lam = self.get_lambda(t_tensor, T, L).view(B, 1, 1)
         eps_final = (1 - lam) * noise_i + lam * eps  # lambda越大，白噪声越多
-
-        # # (5) 混合噪声
-        # eps_final = eps_final / (eps_final.std(dim=(1, 2), keepdim=True) + 1e-4)
 
         return eps_final
 
@@ -910,7 +901,6 @@ class FreqDiffusion(nn.Module):
 >>>>>>> parent of 40f394a (引入频域的扩散v1)
     def forward(self, item_rep, item_tag, mask_seq):
 
-        noise = th.randn_like(item_tag)
         t, weights = self.schedule_sampler.sample(item_rep.shape[0],
                                                   item_tag.device)  ## t is sampled from schedule_sampler
 
@@ -920,6 +910,7 @@ class FreqDiffusion(nn.Module):
         else:
             noise = th.randn_like(item_rep)
 
+        # 标准前向扩散，返回加入噪声的序列表示
         x_t = self.q_sample(item_rep, t, noise=noise)
         rep_time_out, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)
 
@@ -927,8 +918,14 @@ class FreqDiffusion(nn.Module):
         x_t_freq, X_t = self.q_sample_freq(item_rep, t)
         rep_freq_out, _ = self.xstart_model(item_rep, x_t_freq, self._scale_timesteps(t), mask_seq)
 
+<<<<<<< Updated upstream
         # eps, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ## eps predict
         # x_0 = self._predict_xstart_from_eps(x_t, t, eps)
 
         # x_0, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ##output predict
         return rep_time_out, rep_freq_out, item_rep_out, weights, t
+=======
+        # x_0:最终预测,item_rep_out：整个序列的特征表征
+        x_0, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ##output predict
+        return x_0, item_rep_out, weights, t
+>>>>>>> Stashed changes

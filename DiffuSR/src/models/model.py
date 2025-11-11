@@ -39,7 +39,10 @@ class Att_Diffuse_model(nn.Module):
         self.loss_ce = nn.CrossEntropyLoss()
         self.loss_ce_rec = nn.CrossEntropyLoss(reduction='none')
         self.loss_mse = nn.MSELoss()
+<<<<<<< Updated upstream
         self.freq_predictor = nn.Linear(self.emb_dim,self.emb_dim)
+=======
+>>>>>>> Stashed changes
 
     def diffu_pre(self, item_rep, tag_emb, mask_seq):
 <<<<<<< HEAD
