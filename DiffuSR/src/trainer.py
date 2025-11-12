@@ -107,6 +107,41 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
         flag_update = 0
         # running_loss = 0.0
 
+        # ======== 动态一致性与EMA策略调度 ========
+        total_epochs = epochs
+
+        # ---- 动态 EMA momentum ----
+        if epoch_temp < 20:
+            model_joint.momentum = 0.97
+        elif epoch_temp < 80:
+            model_joint.momentum = 0.985
+        elif epoch_temp < 150:
+            model_joint.momentum = 0.99
+        else:
+            model_joint.momentum = 0.995
+
+        # ---- 动态一致性 λ (curriculum) ----
+        if epoch_temp < 20:
+            lam = 0.1 + 0.4 * (epoch_temp / 20)  # 0.1→0.5
+        elif epoch_temp < 80:
+            lam = 0.5 + 0.5 * ((epoch_temp - 20) / 60)  # 0.5→1.0
+        elif epoch_temp < 150:
+            lam = 1.0  # plateau
+        elif epoch_temp < 220:
+            lam = 1.0 + 0.5 * ((epoch_temp - 180) / 70)  # 1.0→1.5
+        else:
+            lam = 1.5 - 1.0 * ((epoch_temp - 250) / 50)  # 1.5→0.5
+        args.consist_lambda = lam
+
+        # ---- 动态频带控制 ----
+        # 前5轮只用高频，之后用中+高频
+        if epoch_temp < 5:
+            args.use_mid = False
+        elif epoch_temp < 250:
+            args.use_mid = True
+        else:
+            args.use_mid = False  # fine-tune 阶段再去掉中频
+
         scaler = torch.cuda.amp.GradScaler()
 
         for index_temp, train_batch in enumerate(tra_data_loader):
@@ -128,11 +163,11 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                     else:
                         loss_all = loss_unweighted.mean()
 
-                    lam = getattr(args,"consist_lambda",1)
+                    # lam = getattr(args,"consist_lambda",1)
                     if L_consist is None:
                         loss_all = loss_all
                     else:
-                        loss_all = loss_all + lam * L_consist
+                        loss_all = loss_all + args.consist_lambda * L_consist
 
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)

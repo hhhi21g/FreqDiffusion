@@ -6,14 +6,23 @@
   <component name="ChangeListManager">
     <list default="true" id="e8e26abb-1683-4e9c-a0b1-a97f79ea14e6" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR.7z" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR.7z" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/calr_head_amazon_beauty.pt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/freq_filter_log.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-11_19-22-05.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-11_19-24-12.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-11_19-25-40.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_08-46-08.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_14-27-39.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_14-39-44.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_14-57-25.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_15-08-07.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_15-08-17.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_15-13-13.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_15-14-00.log" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/freqdiffusion.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/freqdiffusion.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/trainer.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/trainer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,7 +65,7 @@
       <workItem from="1762567935696" duration="25795000" />
       <workItem from="1762671013755" duration="5856000" />
       <workItem from="1762687490428" duration="134000" />
-      <workItem from="1762687641083" duration="37398000" />
+      <workItem from="1762687641083" duration="42193000" />
     </task>
     <servers />
   </component>

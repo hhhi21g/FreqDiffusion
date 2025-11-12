@@ -9,46 +9,49 @@ from .step_sample import LossAwareSampler
 import torch as th
 
 
-def freqband_consistency_loss(X_in, X_pred, s1, s2, k=20.0, scale=20):
-    """根据用户频谱状态动态加权的一致性损失"""
+def freqband_consistency_loss(X_in, X_pred, s1, s2, k=20.0, scale=4.0,use_mid = True):
+    """中/高频一致性（teacher停梯度、同分母归一、通道均值+频率求和+有效频点归一）"""
     eps = 1e-6
     B, F, H = X_in.shape
     u = torch.linspace(0, 1, F, device=X_in.device)[None, :, None]
 
-    # 三段soft mask
-    high_mask = torch.sigmoid(k * (u - s2))
-    band_mask = torch.sigmoid(k * (u - s1)) * torch.sigmoid(k * (s2 - u))
+    # 中/高频 soft mask
+    high_mask = torch.sigmoid(k * (u - s2))  # [1,F,1]
+    band_mask = torch.sigmoid(k * (u - s1)) * torch.sigmoid(k * (s2 - u))  # [1,F,1]
 
-    # 各频带能量
+    if not use_mid:
+        # print("no mid")
+        band_mask = torch.zeros_like(band_mask)
+
+    # —— 动态权重估计：用原始 X_in 能量（未归一）——
     E_mid = (X_in.abs() * band_mask).pow(2).mean(dim=(1, 2))
     E_high = (X_in.abs() * high_mask).pow(2).mean(dim=(1, 2))
     E_sum = E_mid + E_high + eps
     w_mid, w_high = E_mid / E_sum, E_high / E_sum
+    alpha_mid = torch.where(w_mid > 0.3, 1.2, 1.0)
+    alpha_high = torch.where(w_high > 0.4, 1.2, 1.0)
 
-    # 动态放缩
-    # α_low = torch.where(w_low > 0.5, 1.5, 1.0)
-    α_mid = torch.where(w_mid > 0.3, 1.5, 1.0)
-    α_high = torch.where(w_high > 0.4, 1.5, 1.0)
+    # —— 同一分母归一化（以 X_in 为标尺），teacher 停梯度 ——
+    denom = X_in.abs().mean(dim=(1, 2), keepdim=True).detach() + eps
+    X_in_n = X_in.detach() / denom
+    X_pred_n = X_pred / denom
 
-    X_in = X_in / (X_in.abs().mean(dim=(1, 2), keepdim=True) + eps)
-    X_pred = X_pred / (X_pred.abs().mean(dim=(1, 2), keepdim=True) + eps)
+    # log1p 幅谱（高频小能量更稳）
+    S_in = torch.log1p(X_in_n.abs())
+    S_pred = torch.log1p(X_pred_n.abs())
 
-    S_in = torch.log(X_in.abs() + eps)
-    S_pred = torch.log(X_pred.abs() + eps)
+    # 差异：通道均值 → 频率求和
+    diff2 = (S_pred - S_in).pow(2)  # [B,F,H]
+    diff_mid = (diff2 * band_mask).mean(dim=2).sum(dim=1)  # [B]
+    diff_high = (diff2 * high_mask).mean(dim=2).sum(dim=1)  # [B]
 
-    # 各频段差异
-    # diff_low = ((X_pred.abs() - X_in.abs()) ** 2 * low_mask).sum(dim=(1, 2))
-    diff_all = (S_pred - S_in) ** 2
-    diff_mid = (diff_all * band_mask).mean(dim=2).sum(dim=1)  # mean over H, sum over F
-    diff_high = (diff_all * high_mask).mean(dim=2).sum(dim=1)  # mean over H, sum over F
-
-    # 按有效频点归一，防止不同 s1/s2 比例不一致
+    # 按有效频点归一（防止 s1/s2 面积不同）
     F_eff_mid = band_mask.sum(dim=1).squeeze(-1) + eps
     F_eff_high = high_mask.sum(dim=1).squeeze(-1) + eps
     diff_mid = diff_mid / F_eff_mid
     diff_high = diff_high / F_eff_high
 
-    L = scale * ((α_mid * diff_mid + α_high * diff_high) / F).mean()
+    L = scale * (alpha_mid * diff_mid + alpha_high * diff_high).mean()
     return L
 
 
@@ -82,6 +85,10 @@ class Att_Diffuse_model(nn.Module):
         self.loss_ce = nn.CrossEntropyLoss()
         self.loss_ce_rec = nn.CrossEntropyLoss(reduction='none')
         self.loss_mse = nn.MSELoss()
+        self.momentum = 0.99
+        self.register_buffer("ema_inited", torch.tensor(0, dtype=torch.uint8))
+        self.register_buffer("ema_ctx", torch.zeros(1,1,1))
+
 
     def diffu_pre(self, item_rep, tag_emb, mask_seq):
         seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
@@ -169,9 +176,29 @@ class Att_Diffuse_model(nn.Module):
             tag_emb = self.item_embeddings(tag.squeeze(-1))  ## B x H
             rep_diffu, rep_item, weights, t = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
 
+            # rep_item: [B,T,H]（来自 self.diffu_pre 的第二个返回）
+            with torch.no_grad():
+                if self.ema_ctx.numel() == 1 or self.ema_ctx.shape != rep_item.shape:
+                    # print(f"[Epoch] Re-init EMA teacher! shape={rep_item.shape}")
+                    self.ema_ctx = rep_item.detach().clone().to(rep_item.device)
+                    self.ema_inited.fill_(1)
+                else:
+                    self.ema_ctx.mul_(self.momentum).add_(rep_item.detach(), alpha=1 - self.momentum)
+            teacher_ctx = self.ema_ctx.detach()  # 停梯度的 teacher
+
             eps = 1e-6
-            x_in = item_embeddings * mask_seq.unsqueeze(-1)
+            # x_in = item_embeddings * mask_seq.unsqueeze(-1)
+            x_in = teacher_ctx * mask_seq.unsqueeze(-1)
             x_pred = rep_item * mask_seq.unsqueeze(-1)
+
+            k = min(16, x_in.size(1))
+            x_in = x_in[:, -k:, :]
+            x_pred = x_pred[:, -k:, :]
+            mk = mask_seq[:, -k:]
+
+            hann = torch.hann_window(k, periodic=False, device=x_in.device).view(1, k, 1)
+            x_in = x_in * mk.unsqueeze(-1) * hann
+            x_pred = x_pred * mk.unsqueeze(-1) * hann
 
             x_in = torch.fft.rfft(x_in, dim=1, norm='ortho')
             x_pred = torch.fft.rfft(x_pred, dim=1, norm='ortho')
@@ -179,7 +206,7 @@ class Att_Diffuse_model(nn.Module):
             s1 = torch.sigmoid(self.diffu.shared_s1)
             s2 = torch.sigmoid(self.diffu.shared_s2)
 
-            L_consist = freqband_consistency_loss(x_in, x_pred, s1, s2)
+            L_consist = freqband_consistency_loss(x_in, x_pred, s1, s2,use_mid=getattr(self.diffu.args, "use_mid", True) )
             # item_rep_dis = self.regularization_rep(rep_item, mask_seq)
             # seq_rep_dis = self.regularization_seq_item_rep(rep_diffu, rep_item, mask_seq)
 

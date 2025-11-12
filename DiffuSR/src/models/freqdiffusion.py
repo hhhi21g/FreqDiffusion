@@ -622,6 +622,7 @@ class FreqNoiseGenerator(nn.Module):
 class FreqDiffusion(nn.Module):
     def __init__(self, args, ):
         super(FreqDiffusion, self).__init__()
+        self.args = args
         self.hidden_size = args.hidden_size
         self.schedule_sampler_name = args.schedule_sampler_name
         self.diffusion_steps = args.diffusion_steps
