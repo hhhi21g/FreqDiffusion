@@ -6,8 +6,14 @@
   <component name="ChangeListManager">
     <list default="true" id="e8e26abb-1683-4e9c-a0b1-a97f79ea14e6" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR.7z" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR.7z" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/calr_head_amazon_beauty.pt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/freq_filter_log.txt" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/freqdiffusion.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/freqdiffusion.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/model.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/trainer.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/trainer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,7 +56,7 @@
       <workItem from="1762567935696" duration="25795000" />
       <workItem from="1762671013755" duration="5856000" />
       <workItem from="1762687490428" duration="134000" />
-      <workItem from="1762687641083" duration="25802000" />
+      <workItem from="1762687641083" duration="37398000" />
     </task>
     <servers />
   </component>
@@ -79,16 +85,5 @@
         </entry>
       </map>
     </option>
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/DiffuSR/src/main.py</url>
-          <line>47</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
 </project>

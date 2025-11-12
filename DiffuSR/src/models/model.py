@@ -9,6 +9,49 @@ from .step_sample import LossAwareSampler
 import torch as th
 
 
+def freqband_consistency_loss(X_in, X_pred, s1, s2, k=20.0, scale=20):
+    """根据用户频谱状态动态加权的一致性损失"""
+    eps = 1e-6
+    B, F, H = X_in.shape
+    u = torch.linspace(0, 1, F, device=X_in.device)[None, :, None]
+
+    # 三段soft mask
+    high_mask = torch.sigmoid(k * (u - s2))
+    band_mask = torch.sigmoid(k * (u - s1)) * torch.sigmoid(k * (s2 - u))
+
+    # 各频带能量
+    E_mid = (X_in.abs() * band_mask).pow(2).mean(dim=(1, 2))
+    E_high = (X_in.abs() * high_mask).pow(2).mean(dim=(1, 2))
+    E_sum = E_mid + E_high + eps
+    w_mid, w_high = E_mid / E_sum, E_high / E_sum
+
+    # 动态放缩
+    # α_low = torch.where(w_low > 0.5, 1.5, 1.0)
+    α_mid = torch.where(w_mid > 0.3, 1.5, 1.0)
+    α_high = torch.where(w_high > 0.4, 1.5, 1.0)
+
+    X_in = X_in / (X_in.abs().mean(dim=(1, 2), keepdim=True) + eps)
+    X_pred = X_pred / (X_pred.abs().mean(dim=(1, 2), keepdim=True) + eps)
+
+    S_in = torch.log(X_in.abs() + eps)
+    S_pred = torch.log(X_pred.abs() + eps)
+
+    # 各频段差异
+    # diff_low = ((X_pred.abs() - X_in.abs()) ** 2 * low_mask).sum(dim=(1, 2))
+    diff_all = (S_pred - S_in) ** 2
+    diff_mid = (diff_all * band_mask).mean(dim=2).sum(dim=1)  # mean over H, sum over F
+    diff_high = (diff_all * high_mask).mean(dim=2).sum(dim=1)  # mean over H, sum over F
+
+    # 按有效频点归一，防止不同 s1/s2 比例不一致
+    F_eff_mid = band_mask.sum(dim=1).squeeze(-1) + eps
+    F_eff_high = high_mask.sum(dim=1).squeeze(-1) + eps
+    diff_mid = diff_mid / F_eff_mid
+    diff_high = diff_high / F_eff_high
+
+    L = scale * ((α_mid * diff_mid + α_high * diff_high) / F).mean()
+    return L
+
+
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
         """Construct a layernorm module in the TF style (epsilon inside the square root).
@@ -126,11 +169,22 @@ class Att_Diffuse_model(nn.Module):
             tag_emb = self.item_embeddings(tag.squeeze(-1))  ## B x H
             rep_diffu, rep_item, weights, t = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
 
+            eps = 1e-6
+            x_in = item_embeddings * mask_seq.unsqueeze(-1)
+            x_pred = rep_item * mask_seq.unsqueeze(-1)
+
+            x_in = torch.fft.rfft(x_in, dim=1, norm='ortho')
+            x_pred = torch.fft.rfft(x_pred, dim=1, norm='ortho')
+
+            s1 = torch.sigmoid(self.diffu.shared_s1)
+            s2 = torch.sigmoid(self.diffu.shared_s2)
+
+            L_consist = freqband_consistency_loss(x_in, x_pred, s1, s2)
             # item_rep_dis = self.regularization_rep(rep_item, mask_seq)
             # seq_rep_dis = self.regularization_seq_item_rep(rep_diffu, rep_item, mask_seq)
 
             item_rep_dis = None
-            seq_rep_dis = None
+            seq_rep_dis = L_consist
         else:
             # noise_x_t = th.randn_like(tag_emb)
             noise_x_t = th.randn_like(item_embeddings[:, -1, :])

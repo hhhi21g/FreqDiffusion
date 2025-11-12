@@ -118,7 +118,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                     scores, diffu_rep, _, _, _, _, loss_all = model_joint(seq, label)
                     loss_all = loss_all.mean()
                 else:
-                    _, diffu_rep, weights, t, _, _ = model_joint(seq, label)
+                    _, diffu_rep, weights, t, _, L_consist = model_joint(seq, label)
                     if isinstance(model_joint, nn.DataParallel):
                         loss_unweighted = model_joint.module.loss_diffu_ce(diffu_rep, label)
                     else:
@@ -127,6 +127,12 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                         loss_all = (loss_unweighted * weights.detach()).mean()
                     else:
                         loss_all = loss_unweighted.mean()
+
+                    lam = getattr(args,"consist_lambda",1)
+                    if L_consist is None:
+                        loss_all = loss_all
+                    else:
+                        loss_all = loss_all + lam * L_consist
 
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)
@@ -137,6 +143,8 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
             if index_temp % int(len(tra_data_loader) / 5 + 1) == 0:
                 print('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
                 logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
+                print('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), L_consist.item()))
+                logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), L_consist.item()))
         print("loss in epoch {}: {}".format(epoch_temp, loss_all.item()))
         lr_scheduler.step()
 

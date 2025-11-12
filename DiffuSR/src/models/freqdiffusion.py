@@ -270,26 +270,11 @@ class Transformer_rep(nn.Module):
         self.n_blocks = args.num_blocks
         self.transformer_blocks = nn.ModuleList(
             [TransformerBlock(self.hidden_size, self.heads, self.dropout) for _ in range(self.n_blocks)])
-        self.film_layer = FiLMLayer(self.hidden_size)
 
-    def forward(self, hidden, mask, t_emb=None):
+    def forward(self, hidden, mask):
         for transformer in self.transformer_blocks:
             hidden = transformer.forward(hidden, mask)
-            if t_emb is not None:
-                hidden = self.film_layer(hidden, t_emb)
         return hidden
-
-
-class FiLMLayer(nn.Module):
-    def __init__(self, hidden_size):
-        super().__init__()
-        self.fc_gamma = nn.Linear(hidden_size, hidden_size)
-        self.fc_beta = nn.Linear(hidden_size, hidden_size)
-
-    def forward(self, x, t_emb):
-        gamma = self.fc_gamma(t_emb).to(x.dtype)
-        beta = self.fc_beta(t_emb).to(x.dtype)
-        return (1 + gamma) * x + beta
 
 
 class Diffu_xstart(nn.Module):
@@ -318,7 +303,6 @@ class Diffu_xstart(nn.Module):
             k=20.0,
             norm='ortho'
         )
-        self.film_layer = FiLMLayer(self.hidden_size)
 
     def timestep_embedding(self, timesteps, dim, max_period=10000):
         """
@@ -342,8 +326,7 @@ class Diffu_xstart(nn.Module):
     def forward(self, rep_item, x_t, t, mask_seq):
         emb_t = self.time_embed(self.timestep_embedding(t, self.hidden_size))
         emb_t = emb_t.unsqueeze(1).expand(-1, x_t.size(1), -1)
-        # x_t = x_t + emb_t
-        x_t = self.film_layer(x_t, emb_t)
+        x_t = x_t + emb_t
 
         # freq_code = torch.sin(t[:, None] / 2000 * math.pi).unsqueeze(1).expand_as(x_t)
         # x_t = x_t + 0.1 * freq_code
@@ -356,13 +339,12 @@ class Diffu_xstart(nn.Module):
         )
         ## distribution
         # lambda_uncertainty = self.lambda_uncertainty  ### fixed
-
         ####  Attention
 
         rep_item = self.freq_filer(rep_item)
         # x_t = self.freq_filer(x_t)
 
-        rep_diffu = self.att(rep_item + lambda_uncertainty * x_t, mask_seq, emb_t)
+        rep_diffu = self.att(rep_item + lambda_uncertainty * x_t, mask_seq)
         rep_diffu = self.norm_diffu_rep(self.dropout(rep_diffu))
         out = rep_diffu[:, -1, :]
 
@@ -850,6 +832,7 @@ class FreqDiffusion(nn.Module):
 
     def forward(self, item_rep, item_tag, mask_seq):
 
+        noise = th.randn_like(item_tag)
         t, weights = self.schedule_sampler.sample(item_rep.shape[0],
                                                   item_tag.device)  ## t is sampled from schedule_sampler
 
@@ -859,9 +842,10 @@ class FreqDiffusion(nn.Module):
         else:
             noise = th.randn_like(item_rep)
 
-        # xt:带噪序列
         x_t = self.q_sample(item_rep, t, noise=noise)
 
-        # x_t最终预测,item_rep_out整个序列的特征表征
+        # eps, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ## eps predict
+        # x_0 = self._predict_xstart_from_eps(x_t, t, eps)
+
         x_0, item_rep_out = self.xstart_model(item_rep, x_t, self._scale_timesteps(t), mask_seq)  ##output predict
         return x_0, item_rep_out, weights, t
