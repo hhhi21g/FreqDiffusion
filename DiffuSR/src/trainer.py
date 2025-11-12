@@ -1,3 +1,5 @@
+import math
+
 import torch.nn as nn
 import torch.optim as optim
 import datetime
@@ -6,6 +8,7 @@ import numpy as np
 import copy
 import time
 import pickle
+import torch.nn.functional as F
 
 
 def optimizers(model, args):
@@ -86,6 +89,8 @@ def LSHT_inference(model_joint, args, data_loader):
 def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint, args, logger):
     epochs = args.epochs
     device = args.device
+
+    model_joint.args = args
     metric_ks = args.metric_ks
     model_joint = model_joint.to(device)
     is_parallel = args.num_gpu > 1
@@ -99,48 +104,39 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                   'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
 
+
     for epoch_temp in range(0, epochs):
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         model_joint.train()
 
+        args.epoch = epoch_temp
+        if isinstance(model_joint, nn.DataParallel):
+            model_joint.module.args = args
+        else:
+            model_joint.args = args
+
+        args.use_mid = epoch_temp >= 50
+
+        target_lambda = 0.0
+        if epoch_temp < 30:
+            target_lambda = 0.0
+        elif epoch_temp < 60:
+            target_lambda = 0.2
+        elif epoch_temp < 100:
+            target_lambda = 0.4
+        else:
+            target_lambda = 0.6
+        # 平滑更新（首次定义时初始化）
+        if not hasattr(args, "consist_lambda"):
+            args.consist_lambda = target_lambda
+        else:
+            args.consist_lambda = 0.8 * args.consist_lambda + 0.2 * target_lambda
+
+
         flag_update = 0
         # running_loss = 0.0
 
-        # ======== 动态一致性与EMA策略调度 ========
-        total_epochs = epochs
-
-        # ---- 动态 EMA momentum ----
-        if epoch_temp < 20:
-            model_joint.momentum = 0.97
-        elif epoch_temp < 80:
-            model_joint.momentum = 0.985
-        elif epoch_temp < 150:
-            model_joint.momentum = 0.99
-        else:
-            model_joint.momentum = 0.995
-
-        # ---- 动态一致性 λ (curriculum) ----
-        if epoch_temp < 20:
-            lam = 0.1 + 0.4 * (epoch_temp / 20)  # 0.1→0.5
-        elif epoch_temp < 80:
-            lam = 0.5 + 0.5 * ((epoch_temp - 20) / 60)  # 0.5→1.0
-        elif epoch_temp < 150:
-            lam = 1.0  # plateau
-        elif epoch_temp < 220:
-            lam = 1.0 + 0.5 * ((epoch_temp - 180) / 70)  # 1.0→1.5
-        else:
-            lam = 1.5 - 1.0 * ((epoch_temp - 250) / 50)  # 1.5→0.5
-        args.consist_lambda = lam
-
-        # ---- 动态频带控制 ----
-        # 前5轮只用高频，之后用中+高频
-        if epoch_temp < 5:
-            args.use_mid = False
-        elif epoch_temp < 250:
-            args.use_mid = True
-        else:
-            args.use_mid = False  # fine-tune 阶段再去掉中频
 
         scaler = torch.cuda.amp.GradScaler()
 
@@ -154,10 +150,20 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                     loss_all = loss_all.mean()
                 else:
                     _, diffu_rep, weights, t, _, L_consist = model_joint(seq, label)
-                    if isinstance(model_joint, nn.DataParallel):
-                        loss_unweighted = model_joint.module.loss_diffu_ce(diffu_rep, label)
+
+                    # phase-boost for CE in first 6 epochs
+                    if epoch_temp < 6:
+                        item_emb_norm = F.normalize(
+                            model_joint.module.item_embeddings.weight if isinstance(model_joint, nn.DataParallel)
+                            else model_joint.item_embeddings.weight, dim=-1)
+                        rep_norm = F.normalize(diffu_rep, dim=-1)
+                        scores = torch.matmul(rep_norm, item_emb_norm.t()) / 0.07  # temp
+                        loss_unweighted = F.cross_entropy(scores, label.squeeze(-1))
                     else:
-                        loss_unweighted = model_joint.loss_diffu_ce(diffu_rep, label)
+                        if isinstance(model_joint, nn.DataParallel):
+                            loss_unweighted = model_joint.module.loss_diffu_ce(diffu_rep, label)
+                        else:
+                            loss_unweighted = model_joint.loss_diffu_ce(diffu_rep, label)
                     if weights is not None:
                         loss_all = (loss_unweighted * weights.detach()).mean()
                     else:
@@ -166,6 +172,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                     # lam = getattr(args,"consist_lambda",1)
                     if L_consist is None:
                         loss_all = loss_all
+                        L_consist = torch.tensor(0.0, device=device)
                     else:
                         loss_all = loss_all + args.consist_lambda * L_consist
 
@@ -182,6 +189,9 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                 logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), L_consist.item()))
         print("loss in epoch {}: {}".format(epoch_temp, loss_all.item()))
         lr_scheduler.step()
+        # args.consist_lambda = float(
+        #     0.7 * args.consist_lambda + 0.3 * lam
+        # )
 
         if isinstance(model_joint, torch.nn.DataParallel):
             logs = model_joint.module.diffu.freq_noise_fn.param_log
