@@ -7,3 +7,4 @@ Epoch 3: start=-2.4510, end=2.4436, tau=3.4463
 Epoch 1: start=-2.4505, end=2.4519, tau=3.2276
 Epoch 2: start=-2.4520, end=2.4493, tau=3.2787
 Epoch 3: start=-2.4488, end=2.4433, tau=3.4854
+Epoch 1: start=-2.4505, end=2.4519, tau=3.2276

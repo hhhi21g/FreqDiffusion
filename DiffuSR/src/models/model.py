@@ -23,6 +23,18 @@ def freqband_consistency_loss(X_in, X_pred, s1, s2, k=20.0, scale=4.0, use_mid=T
         # print("no mid")
         band_mask = torch.zeros_like(band_mask)
 
+    if epoch is not None:
+        mix_ratio = torch.clamp(torch.tensor(epoch / 100.0, device=X_in.device), 0, 1).item()
+    else:
+        mix_ratio = 0.5
+    w_high = 1 - 0.5 * mix_ratio
+    w_mid = 0.5 * mix_ratio
+
+    high_mask = torch.nn.functional.avg_pool1d(high_mask.transpose(1, 2), kernel_size=3, stride=1, padding=1).transpose(
+        1, 2)
+    band_mask = torch.nn.functional.avg_pool1d(band_mask.transpose(1, 2), kernel_size=3, stride=1, padding=1).transpose(
+        1, 2)
+
     E = X_in.abs().mean(dim=(1, 2), keepdim=True) + eps
     energy_weight = (X_in.abs() / E).pow(0.5).detach()
 
@@ -45,13 +57,6 @@ def freqband_consistency_loss(X_in, X_pred, s1, s2, k=20.0, scale=4.0, use_mid=T
     F_eff_high = high_mask.sum(dim=1).squeeze(-1) + eps
     diff_mid = diff_mid / F_eff_mid
     diff_high = diff_high / F_eff_high
-
-    if epoch is not None:
-        mix_ratio = torch.clamp(torch.tensor(epoch / 100.0, device=X_in.device), 0, 1).item()
-    else:
-        mix_ratio = 0.5
-    w_high = 1 - 0.5 * mix_ratio
-    w_mid = 0.5 * mix_ratio
 
     L = scale * (w_high * diff_high + w_mid * diff_mid).mean()
     return L
@@ -183,7 +188,7 @@ class Att_Diffuse_model(nn.Module):
                 else:
                     with torch.no_grad():
                         self.ema_ctx.mul_(self.momentum).add_(rep_item, alpha=1 - self.momentum)
-                    teacher_ctx = self.ema_ctx.detach()
+                    # teacher_ctx = self.ema_ctx.detach()
 
             teacher_ctx = self.ema_ctx.detach()  # 停梯度的 teacher
 
@@ -207,13 +212,25 @@ class Att_Diffuse_model(nn.Module):
             s1 = torch.sigmoid(self.diffu.shared_s1)
             s2 = torch.sigmoid(self.diffu.shared_s2)
 
+            with torch.no_grad():
+                if self.ema_ctx.numel() == 1 or self.ema_ctx.shape != rep_item.shape:
+                    self.ema_ctx = rep_item.detach().clone().to(rep_item.device)
+                    self.ema_inited.fill_(1)
+                else:
+                    self.ema_ctx.mul_(self.momentum).add_(rep_item.detach(), alpha=1 - self.momentum)
+            teacher_ctx = self.ema_ctx.detach()
+
             if getattr(self.args, "epoch", 0) >= 30:  # 延后到30轮
+                cur_epoch = getattr(self.args, "epoch", 0)
+                scale_eff = getattr(self.args, "consist_scale", 4.0)
+                if 30 <= cur_epoch < 40:
+                    scale_eff *= (cur_epoch - 30) / 10.0
                 L_consist = freqband_consistency_loss(
                     x_in, x_pred, s1, s2,
                     k=20.0,
-                    scale=getattr(self.args, "consist_scale", 4.0),
+                    scale=scale_eff,
                     use_mid=getattr(self.args, "use_mid", True),
-                    epoch=getattr(self.args, "epoch", 0)
+                    epoch=cur_epoch
                 )
             else:
                 L_consist = None

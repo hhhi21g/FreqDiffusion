@@ -116,14 +116,17 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
         else:
             model_joint.args = args
 
-        args.use_mid = epoch_temp >= 50
+        args.use_mid = epoch_temp >= 80
+
+        if hasattr(model_joint, "momentum"):
+            model_joint.momentum = 0.97 if epoch_temp < 150 else 0.985
 
         target_lambda = 0.0
-        if epoch_temp < 30:
+        if epoch_temp < 40:
             target_lambda = 0.0
-        elif epoch_temp < 60:
+        elif epoch_temp < 80:
             target_lambda = 0.2
-        elif epoch_temp < 100:
+        elif epoch_temp < 140:
             target_lambda = 0.4
         else:
             target_lambda = 0.6
@@ -131,7 +134,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
         if not hasattr(args, "consist_lambda"):
             args.consist_lambda = target_lambda
         else:
-            args.consist_lambda = 0.8 * args.consist_lambda + 0.2 * target_lambda
+            args.consist_lambda = 0.9 * args.consist_lambda + 0.1 * target_lambda
 
 
         flag_update = 0
