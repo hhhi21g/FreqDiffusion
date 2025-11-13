@@ -104,7 +104,6 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                   'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
 
-
     for epoch_temp in range(0, epochs):
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
@@ -116,30 +115,17 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
         else:
             model_joint.args = args
 
-        args.use_mid = epoch_temp >= 80
-
-        if hasattr(model_joint, "momentum"):
-            model_joint.momentum = 0.97 if epoch_temp < 150 else 0.985
-
-        target_lambda = 0.0
-        if epoch_temp < 40:
-            target_lambda = 0.0
-        elif epoch_temp < 80:
-            target_lambda = 0.2
-        elif epoch_temp < 140:
-            target_lambda = 0.4
+        # args.use_mid = epoch_temp >= 50
+        if epoch_temp < 50:
+            args.use_mid = 0.0
+        elif epoch_temp < 70:
+            args.use_mid = (epoch_temp - 50) / 20.0
         else:
-            target_lambda = 0.6
-        # 平滑更新（首次定义时初始化）
-        if not hasattr(args, "consist_lambda"):
-            args.consist_lambda = target_lambda
-        else:
-            args.consist_lambda = 0.9 * args.consist_lambda + 0.1 * target_lambda
-
+            args.use_mid = 1.0
 
         flag_update = 0
         # running_loss = 0.0
-
+        # running_loss = 0.0
 
         scaler = torch.cuda.amp.GradScaler()
 
@@ -177,7 +163,7 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                         loss_all = loss_all
                         L_consist = torch.tensor(0.0, device=device)
                     else:
-                        loss_all = loss_all + args.consist_lambda * L_consist
+                        loss_all = loss_all + L_consist
 
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)
