@@ -86,6 +86,12 @@ parser.add_argument('--inference_only', default=False, type=str2bool)
 parser.add_argument('--state_dict_path', default=None, type=str)
 parser.add_argument('--norm_first', action='store_true', default=False)
 
+parser.add_argument("--lambda_freq", type=float, default=10)
+parser.add_argument("--w_low", type=float, default=1.0)
+parser.add_argument("--w_mid", type=float, default=1.0)
+parser.add_argument("--w_high", type=float, default=1.0)
+
+
 args = parser.parse_args()
 
 args.num_gpu = torch.cuda.device_count()

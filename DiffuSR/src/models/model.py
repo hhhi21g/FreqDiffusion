@@ -9,55 +9,6 @@ from .step_sample import LossAwareSampler
 import torch as th
 
 
-def freqband_consistency_loss(X_in, X_pred, s1, s2, k=20.0, scale=4.0, use_mid=True, epoch=None):
-    """中/高频一致性（teacher停梯度、同分母归一、通道均值+频率求和+有效频点归一）"""
-    eps = 1e-6
-    B, F, H = X_in.shape
-    u = torch.linspace(0, 1, F, device=X_in.device)[None, :, None]
-
-    # 中/高频 soft mask
-    high_mask = torch.sigmoid(k * (u - s2))  # [1,F,1]
-    band_mask = torch.sigmoid(k * (u - s1)) * torch.sigmoid(k * (s2 - u))  # [1,F,1]
-
-    # if not use_mid:
-    # print("no mid")
-    # band_mask = torch.zeros_like(band_mask)
-    band_mask = band_mask * use_mid
-
-    E = X_in.abs().mean(dim=(1, 2), keepdim=True) + eps
-    energy_weight = (X_in.abs() / E).pow(0.5).detach()
-
-    # —— 同一分母归一化（以 X_in 为标尺），teacher 停梯度 ——
-    denom = X_in.abs().mean(dim=(1, 2), keepdim=True).detach() + eps
-    X_in_n = X_in.detach() / denom
-    X_pred_n = X_pred / denom
-
-    # log1p 幅谱（高频小能量更稳）
-    S_in = torch.log1p(X_in_n.abs())
-    S_pred = torch.log1p(X_pred_n.abs())
-
-    # 差异：通道均值 → 频率求和
-    diff2 = (S_pred - S_in).pow(2) * energy_weight  # [B,F,H]
-    diff_mid = (diff2 * band_mask).mean(dim=2).sum(dim=1)  # [B]
-    diff_high = (diff2 * high_mask).mean(dim=2).sum(dim=1)  # [B]
-
-    # 按有效频点归一（防止 s1/s2 面积不同）
-    F_eff_mid = band_mask.sum(dim=1).squeeze(-1) + eps
-    F_eff_high = high_mask.sum(dim=1).squeeze(-1) + eps
-    diff_mid = diff_mid / F_eff_mid
-    diff_high = diff_high / F_eff_high
-
-    if epoch is not None:
-        mix_ratio = torch.clamp(torch.tensor(epoch / 100.0, device=X_in.device), 0, 1).item()
-    else:
-        mix_ratio = 0.5
-    w_high = 0.7 - 0.2 * mix_ratio
-    w_mid = 0.3 + 0.2 * mix_ratio
-
-    L = scale * (w_high * diff_high + w_mid * diff_mid).mean()
-    return L
-
-
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
         """Construct a layernorm module in the TF style (epsilon inside the square root).
@@ -77,7 +28,6 @@ class LayerNorm(nn.Module):
 class Att_Diffuse_model(nn.Module):
     def __init__(self, diffu, args):
         super(Att_Diffuse_model, self).__init__()
-        self.args = args
         self.emb_dim = args.hidden_size
         self.item_num = args.item_num + 1
         self.item_embeddings = nn.Embedding(self.item_num, self.emb_dim)
@@ -89,13 +39,10 @@ class Att_Diffuse_model(nn.Module):
         self.loss_ce = nn.CrossEntropyLoss()
         self.loss_ce_rec = nn.CrossEntropyLoss(reduction='none')
         self.loss_mse = nn.MSELoss()
-        self.momentum = 0.99
-        self.register_buffer("ema_inited", torch.tensor(0, dtype=torch.uint8))
-        self.register_buffer("ema_ctx", torch.zeros(1, 1, 1))
 
     def diffu_pre(self, item_rep, tag_emb, mask_seq):
-        seq_rep_diffu, item_rep_out, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
-        return seq_rep_diffu, item_rep_out, weights, t
+        x0_rep, seq_rep, weights, t = self.diffu(item_rep, tag_emb, mask_seq)
+        return x0_rep, seq_rep, weights, t
 
     def reverse(self, item_rep, noise_x_t, mask_seq):
         reverse_pre = self.diffu.reverse_p_sample(item_rep, noise_x_t, mask_seq)
@@ -162,92 +109,33 @@ class Att_Diffuse_model(nn.Module):
 
     def forward(self, sequence, tag, train_flag=True):
 
-        seq_length = sequence.size(1)
-
         item_embeddings = self.item_embeddings(sequence)
-        item_embeddings = self.embed_dropout(item_embeddings)  ## dropout first than layernorm
-
-        # item_embeddings = item_embeddings + position_embeddings
-
+        item_embeddings = self.embed_dropout(item_embeddings)
         item_embeddings = self.LayerNorm(item_embeddings)
 
         mask_seq = (sequence > 0).float()
 
         if train_flag:
-            tag_emb = self.item_embeddings(tag.squeeze(-1))  ## B x H
-            rep_diffu, rep_item, weights, t = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
+            tag_emb = self.item_embeddings(tag.squeeze(-1))  # [B,H]
 
-            with torch.no_grad():
-                if self.ema_ctx.numel() == 1 or self.ema_ctx.shape != rep_item.shape:
-                    self.ema_ctx = rep_item.detach().clone().to(rep_item.device)
-                    self.ema_inited.fill_(1)
-                else:
-                    with torch.no_grad():
-                        cur_epoch = getattr(self.args, "epoch", 0)
-                        if cur_epoch < 100:
-                            cur_mom = 0.97
-                        else:
-                            cur_mom = 0.99
-                        self.ema_ctx.mul_(cur_mom).add_(rep_item, alpha=1 - cur_mom)
+            # 正确解包：x0_rep = [B,H], seq_rep = [B,L,H]
+            x0_rep, seq_rep, weights, t = self.diffu_pre(item_embeddings, tag_emb, mask_seq)
 
-                    # teacher_ctx = self.ema_ctx.detach()
+            # 我们要对整个序列做 FFT
+            seq_pred = seq_rep  # [B, L, H]
 
-            teacher_ctx = self.ema_ctx.detach()  # 停梯度的 teacher
+            return x0_rep, seq_rep, weights, t, None, None
 
-            eps = 1e-6
-            # x_in = item_embeddings * mask_seq.unsqueeze(-1)
-            x_in = teacher_ctx * mask_seq.unsqueeze(-1)
-            x_pred = rep_item * mask_seq.unsqueeze(-1)
-
-            k = min(16, x_in.size(1))
-            x_in = x_in[:, -k:, :]
-            x_pred = x_pred[:, -k:, :]
-            mk = mask_seq[:, -k:]
-
-            hann = torch.hann_window(k, periodic=False, device=x_in.device).view(1, k, 1)
-            x_in = x_in * mk.unsqueeze(-1) * hann
-            x_pred = x_pred * mk.unsqueeze(-1) * hann
-
-            x_in = torch.fft.rfft(x_in, dim=1, norm='ortho')
-            x_pred = torch.fft.rfft(x_pred, dim=1, norm='ortho')
-
-            s1 = torch.sigmoid(self.diffu.shared_s1)
-            s2 = torch.sigmoid(self.diffu.shared_s2)
-
-            base_scale = getattr(self.args, "consist_scale", 2.5)
-            cur_epoch = getattr(self.args, "epoch", 0)
-
-            # scale 调度：40→120 线性从 2.5 → 4.0
-            if cur_epoch < 40:
-                scale_eff = 0.0
-            elif cur_epoch < 120:
-                scale_eff = base_scale + (4.0 - base_scale) * ((cur_epoch - 40) / 80.0)
-            else:
-                scale_eff = 4.0
-
-            if getattr(self.args, "epoch", 0) >= 30:  # 前40轮不加入L_consist
-                L_consist = freqband_consistency_loss(
-                    x_in, x_pred, s1, s2,
-                    k=20.0,
-                    scale=scale_eff,
-                    use_mid=getattr(self.args, "use_mid", True),
-                    epoch=getattr(self.args, "epoch", 0)
-                )
-            else:
-                L_consist = None
-
-            item_rep_dis = None
-            seq_rep_dis = L_consist
         else:
-            # noise_x_t = th.randn_like(tag_emb)
             noise_x_t = th.randn_like(item_embeddings[:, -1, :])
-            rep_diffu = self.reverse(item_embeddings, noise_x_t, mask_seq)
-            if rep_diffu.dim() == 3:
-                rep_diffu = rep_diffu.mean(dim=1)
-            weights, t, item_rep_dis, seq_rep_dis = None, None, None, None
+            seq_rep = self.reverse(item_embeddings, noise_x_t, mask_seq)  # [B, L, H]
 
-        scores = None
-        return scores, rep_diffu, weights, t, item_rep_dis, seq_rep_dis
+            if seq_rep.dim() == 3:
+                rep_last = seq_rep[:, -1, :]  # [B, H]
+            else:
+                rep_last = seq_rep
+
+            return rep_last, seq_rep, None, None, None, None
 
 
 def create_model_diffu(args):

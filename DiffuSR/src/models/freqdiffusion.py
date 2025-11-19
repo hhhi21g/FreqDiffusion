@@ -339,6 +339,7 @@ class Diffu_xstart(nn.Module):
         )
         ## distribution
         # lambda_uncertainty = self.lambda_uncertainty  ### fixed
+
         ####  Attention
 
         rep_item = self.freq_filer(rep_item)
@@ -518,16 +519,16 @@ class FreqNoiseGenerator(nn.Module):
         self.param_log = []
 
         # 预存频率刻度
-        self.register_buffer("u_grid", torch.linspace(0, 1, seq_len // 2 + 1))
+        # self.register_buffer("u_grid", torch.linspace(0, 1, seq_len // 2 + 1))
 
     # -------- 计算三段掩码 --------
-    def _make_masks(self):
+    def _make_masks(self,L):
         s1 = torch.sigmoid(self.shared_s1)
         s2 = torch.sigmoid(self.shared_s2)
         s1 = torch.clamp(s1, 1e-3, 0.998)
         s2 = torch.clamp(s2, s1 + 1e-3, torch.tensor(0.999, device=s2.device))
 
-        u = self.u_grid.to(s1.device)
+        u = torch.linspace(0, 1, L // 2 + 1, device=s1.device)
         low_mask = torch.sigmoid(self.k * (s1 - u))
         high_mask = torch.sigmoid(self.k * (u - s2))
         mid_mask = torch.sigmoid(self.k * (u - s1)) * torch.sigmoid(self.k * (s2 - u))
@@ -573,13 +574,15 @@ class FreqNoiseGenerator(nn.Module):
 
     def forward(self, t_tensor, shape):
         B, L, H = shape
+        # self.seq_len = L
+        # u_grid = torch.linspace(0, 1, L//2 + 1, device=device)
         device = t_tensor.device
         T = 32
 
         # (1) 批量生成 eps [B, L, H]
         eps = torch.randn((B, L, H), device=device)
 
-        low_mask, band_mask, high_mask = self._make_masks()  # [F]
+        low_mask, band_mask, high_mask = self._make_masks(L)  # [F]
         F = L // 2 + 1
         low_mask = low_mask[:F]
         band_mask = band_mask[:F]
@@ -622,7 +625,6 @@ class FreqNoiseGenerator(nn.Module):
 class FreqDiffusion(nn.Module):
     def __init__(self, args, ):
         super(FreqDiffusion, self).__init__()
-        self.args = args
         self.hidden_size = args.hidden_size
         self.schedule_sampler_name = args.schedule_sampler_name
         self.diffusion_steps = args.diffusion_steps

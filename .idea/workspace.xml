@@ -5,34 +5,49 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e8e26abb-1683-4e9c-a0b1-a97f79ea14e6" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/DiffuSR/datasets/data/amazon_beauty/look_pkl.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/DiffuSR/do_fft.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR.7z" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR.7z" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/best_model_amazon_beauty.pt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/lambda_track.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_16-36-43.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_16-36-43.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-29-14.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-29-14.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-30-06.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-30-06.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-33-28.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-33-28.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-37-39.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-37-39.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-38-40.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-38-40.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-41-16.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-41-16.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-43-42.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-43-42.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-47-54.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-47-54.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-48-21.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-48-21.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-51-39.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-51-39.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-55-16.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-55-16.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-09.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-09.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-34.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-34.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-51.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-51.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_19-48-33.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_19-48-33.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_19-50-07.log" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_19-50-07.log" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_16-36-43.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-29-14.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-30-06.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-33-28.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-37-39.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-38-40.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-41-16.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-43-42.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-47-54.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-48-21.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-51-39.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-55-16.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-09.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-34.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_17-57-51.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_19-48-33.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-12_19-50-07.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-13_00-02-57.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/log/amazon_beauty/2025-11-13_10-48-35.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/freqdiffusion.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/freqdiffusion.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/model.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/models/sasrec.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/models/sasrec.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/DiffuSR/src/trainer.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/trainer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/DiffuSR/src/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiffuSR/src/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -42,6 +57,9 @@
     <option name="stateVersion" value="1" />
   </component>
   <component name="ProjectId" id="358jqWTZvc3uVwPu1iZ9MCoaXtV" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -72,7 +90,8 @@
       <workItem from="1762671013755" duration="5856000" />
       <workItem from="1762687490428" duration="134000" />
       <workItem from="1762687641083" duration="51052000" />
-      <workItem from="1763000360293" duration="1681000" />
+      <workItem from="1763000360293" duration="2727000" />
+      <workItem from="1763363344959" duration="30625000" />
     </task>
     <servers />
   </component>
@@ -101,5 +120,8 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/FreqDiffusion$look_pkl.coverage" NAME="look_pkl Coverage Results" MODIFIED="1763449889726" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/DiffuSR/datasets/data/amazon_beauty" />
   </component>
 </project>

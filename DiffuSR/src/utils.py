@@ -42,7 +42,7 @@ class Data_Train():
 
     def get_pytorch_dataloaders(self):
         dataset = TrainDataset(self.id_seq, self.max_len)
-        return data_utils.DataLoader(dataset, batch_size=self.batch_size, shuffle=True, drop_last=True,pin_memory=True)
+        return data_utils.DataLoader(dataset, batch_size=self.batch_size, shuffle=True, pin_memory=True)
 
 
 class ValDataset(data_utils.Dataset):

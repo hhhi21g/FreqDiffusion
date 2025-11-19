@@ -1,5 +1,3 @@
-import math
-
 import torch.nn as nn
 import torch.optim as optim
 import datetime
@@ -8,7 +6,6 @@ import numpy as np
 import copy
 import time
 import pickle
-import torch.nn.functional as F
 
 
 def optimizers(model, args):
@@ -89,8 +86,6 @@ def LSHT_inference(model_joint, args, data_loader):
 def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint, args, logger):
     epochs = args.epochs
     device = args.device
-
-    model_joint.args = args
     metric_ks = args.metric_ks
     model_joint = model_joint.to(device)
     is_parallel = args.num_gpu > 1
@@ -104,105 +99,180 @@ def model_train(tra_data_loader, val_data_loader, test_data_loader, model_joint,
                   'Best_epoch_HR@20': 0, 'Best_epoch_NDCG@20': 0}
     bad_count = 0
 
+    with open("../datasets/data/amazon_beauty/use_ifo.pkl", "rb") as f:
+        user_freq_info = pickle.load(f)
+
+    # frequency warmup
+    freq_warmup = getattr(args, "freq_warmup", 20)
+
     for epoch_temp in range(0, epochs):
         print('Epoch: {}'.format(epoch_temp))
         logger.info('Epoch: {}'.format(epoch_temp))
         model_joint.train()
 
-        args.epoch = epoch_temp
-        if isinstance(model_joint, nn.DataParallel):
-            model_joint.module.args = args
-        else:
-            model_joint.args = args
-
-        # args.use_mid = epoch_temp >= 50
-        if epoch_temp < 50:
-            args.use_mid = 0.0
-        elif epoch_temp < 70:
-            args.use_mid = (epoch_temp - 50) / 20.0
-        else:
-            args.use_mid = 1.0
-
         flag_update = 0
-        # running_loss = 0.0
         # running_loss = 0.0
 
         scaler = torch.cuda.amp.GradScaler()
 
-        for index_temp, train_batch in enumerate(tra_data_loader):
-            train_batch = [x.to(device) for x in train_batch]
-            seq, label = train_batch[0], train_batch[1]  # ✅ 提前统一解包
+        for idx, batch in enumerate(tra_data_loader):
+            batch = [x.to(device) for x in batch]
+            seq, label = batch[0], batch[1]
+            # batch = [seq, label] 或 batch = [seq, label, user_id]
+            if len(batch) >= 3:
+                user_ids = batch[2]
+            else:
+                # 如果 DataLoader 没提供 user_id，则使用样本序号作为 user_id
+                user_ids = torch.arange(seq.size(0), device=device)
+
             optimizer.zero_grad(set_to_none=True)
+
             with torch.cuda.amp.autocast():
-                if args.model.lower() == 'sasrec':
-                    scores, diffu_rep, _, _, _, _, loss_all = model_joint(seq, label)
-                    loss_all = loss_all.mean()
+
+                # ============ 前向 ================
+                x0_rep, seq_pred, weights, t, _, _ = model_joint(seq, label)  # seq_pred (B, L, H)
+
+                if epoch_temp < freq_warmup:
+                    freq_loss = torch.tensor(0.0, device=device)
                 else:
-                    _, diffu_rep, weights, t, _, L_consist = model_joint(seq, label)
+                    # ============ FFT 主体 =============
+                    # mask padding，避免噪声污染
+                    mask = (seq > 0).float().unsqueeze(-1)
+                    seq_masked = seq_pred * mask
 
-                    # phase-boost for CE in first 6 epochs
-                    if epoch_temp < 6:
-                        item_emb_norm = F.normalize(
-                            model_joint.module.item_embeddings.weight if isinstance(model_joint, nn.DataParallel)
-                            else model_joint.item_embeddings.weight, dim=-1)
-                        rep_norm = F.normalize(diffu_rep, dim=-1)
-                        scores = torch.matmul(rep_norm, item_emb_norm.t()) / 0.07  # temp
-                        loss_unweighted = F.cross_entropy(scores, label.squeeze(-1))
-                    else:
-                        if isinstance(model_joint, nn.DataParallel):
-                            loss_unweighted = model_joint.module.loss_diffu_ce(diffu_rep, label)
-                        else:
-                            loss_unweighted = model_joint.loss_diffu_ce(diffu_rep, label)
-                    if weights is not None:
-                        loss_all = (loss_unweighted * weights.detach()).mean()
-                    else:
-                        loss_all = loss_unweighted.mean()
+                    fft_pred = torch.fft.rfft(seq_masked, dim=1, norm="ortho")  # B, F, H
+                    fft_pred_mag = torch.abs(fft_pred).mean(dim=-1)  # B, F
 
-                    # lam = getattr(args,"consist_lambda",1)
-                    if L_consist is None:
-                        loss_all = loss_all
-                        L_consist = torch.tensor(0.0, device=device)
-                    else:
-                        loss_all = loss_all + L_consist
+                    B, F_pred = fft_pred_mag.shape
+                    batch_info = [user_freq_info[int(uid.item())] for uid in user_ids]
 
+                    max_F = max(
+                        max(len(info["freq_global"]), len(info["freq_short"]), len(info["freq_period"]))
+                        for info in batch_info
+                    )
+
+                    # 统一 pad 到 [B, max_F]
+                    freq_global = torch.zeros(B, max_F, device=device)
+                    freq_short = torch.zeros(B, max_F, device=device)
+                    freq_period = torch.zeros(B, max_F, device=device)
+                    P_list = torch.full((B,), -1, dtype=torch.long, device=device)
+
+                    # 真实频谱拷贝（各自用自己的长度 Lg / Ls / Lp）
+                    for i, uid_tensor in enumerate(user_ids):
+                        uid = int(uid_tensor.item())
+                        info = user_freq_info[uid]
+
+                        fg = torch.tensor(info["freq_global"], device=device, dtype=torch.float32)
+                        fs = torch.tensor(info["freq_short"], device=device, dtype=torch.float32)
+                        fp = torch.tensor(info["freq_period"], device=device, dtype=torch.float32)
+                        P = info["P"]
+
+                        Lg = fg.shape[0]
+                        Ls = fs.shape[0]
+                        Lp = fp.shape[0]
+
+                        freq_global[i, :Lg] = fg
+                        freq_short[i, :Ls] = fs
+                        freq_period[i, :Lp] = fp
+
+                        if isinstance(P, int) and 0 <= P < max_F:
+                            P_list[i] = P
+
+                    # 归一化真实频谱
+                    freq_global = freq_global / (freq_global.sum(dim=1, keepdim=True) + 1e-6)
+                    freq_short = freq_short / (freq_short.sum(dim=1, keepdim=True) + 1e-6)
+                    freq_period = freq_period / (freq_period.sum(dim=1, keepdim=True) + 1e-6)
+
+                    # FFT 预测频谱与真实频谱对齐（按公共最小长度裁剪）
+                    F = min(F_pred, max_F)
+
+                    pred_f = fft_pred_mag[:, :F]
+                    # pred_f = pred_f / (pred_f.sum(dim=1, keepdim=True) + 1e-6)
+
+                    freq_global = freq_global[:, :F]
+                    freq_short = freq_short[:, :F]
+                    freq_period = freq_period[:, :F]
+
+                    freq_idx = torch.arange(F, device=device, dtype=torch.float32).unsqueeze(0)
+
+                    # low (长期)
+                    # low (长期)
+                    F_low = max(1, int(F * 0.25))
+                    low_mask = (freq_idx <= F_low).float()
+                    low_mask = low_mask / (low_mask.sum() + 1e-9)
+                    L_low = ((pred_f - freq_global) ** 2 * low_mask).sum(dim=1).mean()
+
+                    # high (短期)
+                    F_high = max(F_low + 1, int(F * 0.50))
+                    high_mask = (freq_idx >= F_high).float()
+                    high_mask = high_mask / (high_mask.sum() + 1e-9)
+                    L_high = ((pred_f - freq_short) ** 2 * high_mask).sum(dim=1).mean()
+
+                    # mid (周期)
+                    sigma = max(1.0, F * 0.08)
+
+                    # 只保留 0 <= P < F 的样本
+                    P_mask = ((P_list >= 0) & (P_list < F)).float()
+                    P_center = P_list.clamp(0, F - 1).float().unsqueeze(1)  # [B,1]
+
+                    weight_mid = torch.exp(
+                        -(freq_idx - P_center) ** 2 / (2 * sigma ** 2)
+                    )
+                    weight_mid = weight_mid * P_mask.unsqueeze(1)
+                    weight_mid = weight_mid / (weight_mid.sum(dim=1, keepdim=True) + 1e-9)
+
+                    L_mid = ((pred_f - freq_period) ** 2 * weight_mid).sum(dim=1).mean()
+
+                    # frequency loss
+                    freq_loss = args.w_low * L_low + args.w_mid * L_mid + args.w_high * L_high
+
+                # 主任务 loss
+                if isinstance(model_joint, nn.DataParallel):
+                    loss_unweighted = model_joint.module.loss_diffu_ce(x0_rep, label)
+                else:
+                    loss_unweighted = model_joint.loss_diffu_ce(x0_rep, label)
+
+                loss_main = loss_unweighted.mean() if weights is None else (loss_unweighted * weights.detach()).mean()
+
+                # warmup
+                loss_all = loss_main + (args.lambda_freq * freq_loss if epoch_temp >= freq_warmup else 0)
+
+            # backward
             scaler.scale(loss_all).backward()
             scaler.step(optimizer)
             scaler.update()
-            # loss_all.backward()
-            #
-            # optimizer.step()
-            if index_temp % int(len(tra_data_loader) / 5 + 1) == 0:
-                print('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
-                logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), loss_all.item()))
-                print('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), L_consist.item()))
-                logger.info('[%d/%d] Loss: %.4f' % (index_temp, len(tra_data_loader), L_consist.item()))
-        print("loss in epoch {}: {}".format(epoch_temp, loss_all.item()))
+
+            if idx % max(1, int(len(tra_data_loader) / 5)) == 0:
+                print(f"[{idx}/{len(tra_data_loader)}] Loss: {loss_all.item():.4f}")
+                logger.info(f"[{idx}/{len(tra_data_loader)}] Loss: {loss_all.item():.4f}")
+            if freq_loss:
+                if idx % max(1, int(len(tra_data_loader) / 5)) == 0:
+                    print(f"[{idx}/{len(tra_data_loader)}] Loss: {freq_loss.item() * args.lambda_freq:.4f}")
+                    logger.info(f"[{idx}/{len(tra_data_loader)}] Loss: {freq_loss.item() * args.lambda_freq:.4f}")
+
         lr_scheduler.step()
-        # args.consist_lambda = float(
-        #     0.7 * args.consist_lambda + 0.3 * lam
-        # )
 
-        if isinstance(model_joint, torch.nn.DataParallel):
-            logs = model_joint.module.diffu.freq_noise_fn.param_log
-        else:
-            logs = model_joint.diffu.freq_noise_fn.param_log
-
-        if len(logs) > 0:
-            start_mean = sum([x["start"] for x in logs]) / len(logs)
-            end_mean = sum([x["end"] for x in logs]) / len(logs)
-            tau_mean = sum([x["tau"] for x in logs]) / len(logs)
-
-            with open("lambda_track.txt", "a") as f:
-                f.write(
-                    f"Epoch {epoch_temp + 1}: "
-                    f"start={start_mean:.4f}, end={end_mean:.4f}, tau={tau_mean:.4f}\n"
-                )
-
-            # 记得清空记录，防止重复累计
-            if isinstance(model_joint, torch.nn.DataParallel):
-                model_joint.module.diffu.freq_noise_fn.param_log = []
-            else:
-                model_joint.diffu.freq_noise_fn.param_log = []
+        # if isinstance(model_joint, torch.nn.DataParallel):
+        #     logs = model_joint.module.diffu.freq_noise_fn.param_log
+        # else:
+        #     logs = model_joint.diffu.freq_noise_fn.param_log
+        #
+        # if len(logs) > 0:
+        #     start_mean = sum([x["start"] for x in logs]) / len(logs)
+        #     end_mean = sum([x["end"] for x in logs]) / len(logs)
+        #     tau_mean = sum([x["tau"] for x in logs]) / len(logs)
+        #
+        #     with open("lambda_track.txt", "a") as f:
+        #         f.write(
+        #             f"Epoch {epoch_temp + 1}: "
+        #             f"start={start_mean:.4f}, end={end_mean:.4f}, tau={tau_mean:.4f}\n"
+        #         )
+        #
+        #     # 记得清空记录，防止重复累计
+        #     if isinstance(model_joint, torch.nn.DataParallel):
+        #         model_joint.module.diffu.freq_noise_fn.param_log = []
+        #     else:
+        #         model_joint.diffu.freq_noise_fn.param_log = []
 
         if epoch_temp != 0 and epoch_temp % args.eval_interval == 0:
             print('start predicting: ', datetime.datetime.now())
